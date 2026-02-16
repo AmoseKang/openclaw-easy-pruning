@@ -2,7 +2,38 @@
 
 Rule-based, model-agnostic session pruning for OpenClaw.
 
-Easy Pruning trims oversized context **in memory only** before an agent run. It never rewrites on-disk `*.jsonl` history.
+Easy Pruning trims oversized context **in memory only** before an agent run. It never rewrites on-disk `*.jsonl` history to keep memory tracable.
+
+---
+
+## Why this project exists
+
+Large real-world OpenClaw sessions often fail for practical reasons:
+
+- Context windows fill up with old tool output long before the useful conversation is over
+- Critical user/system intent gets diluted by noisy historical execution details
+- Recovery is painful when context overflows happen in the middle of active work
+- Built-in generic pruning modes are not always enough for workflow-specific needs
+
+Easy Pruning was created to solve this gap with a predictable, plugin-first approach:
+
+- **No core patching**: safer upgrades, lower maintenance risk
+- **Model-agnostic**: works across providers/models
+- **Rule-based and inspectable**: behavior is deterministic and easy to reason about
+- **Safety-first retention**: preserve user/system + recent context first
+- **Operational visibility**: pruning decisions are visible in logs
+
+In short: it helps teams keep long sessions usable, reduce context waste, and avoid avoidable model interruptions.
+
+---
+
+## Why users choose Easy Pruning
+
+- Keep conversations alive longer without manual cleanup
+- Reduce token waste from stale tool/process output
+- Lower risk of `context_length_exceeded` during heavy workflows
+- Stay future-compatible with OpenClaw updates via standalone plugin design
+- Start simple today, extend later (strategy-based architecture)
 
 ---
 
