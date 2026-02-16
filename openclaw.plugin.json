@@ -1,6 +1,6 @@
 {
   "id": "easy-pruning",
-  "name": "Easy Pruning",
+  "name": "OpenClaw Easy Pruning",
   "version": "0.2.0",
   "description": "Rule-based session pruning for any model: soft/hard/detail pruning before agent run, in-memory only.",
   "entry": "./dist/index.js",
@@ -17,7 +17,7 @@
       "trigger_every_n_tokens": {
         "type": "number",
         "minimum": 1,
-        "default": 5000,
+        "default": 40000,
         "description": "Minimum estimated token growth since last pruning trigger"
       },
       "keep_recent_tokens": {

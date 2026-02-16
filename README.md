@@ -1,8 +1,24 @@
-# Easy Pruning Plugin for OpenClaw
+# 🚀 OpenClaw Easy Pruning Plugin
 
-Rule-based, model-agnostic session pruning for OpenClaw.
+<p align="left">
+  <img alt="OpenClaw Plugin" src="https://img.shields.io/badge/OpenClaw-Plugin-5B6CFF" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-00A86B" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Strict-3178C6" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-7%2F7%20passing-2EA043" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-orange" />
+</p>
 
-Easy Pruning trims oversized context **in memory only** before an agent run. It never rewrites on-disk `*.jsonl` history to keep memory tracable.
+A context-management **OpenClaw plugin** for rule-based context pruning.
+
+---
+
+## ✨ At a glance
+
+- 🧩 **Native OpenClaw plugin architecture** (no core patching)
+- 🛡️ **Safety-first retention** (`system`/`user` + recent tokens/messages)
+- ⚙️ **Three-stage policy engine** (`Soft → Hard → Detail`)
+- 🔍 **Observable runtime behavior** (clear gateway pruning logs)
+- 🔄 **Upgrade-friendly design** (standalone, model-agnostic)
 
 ---
 
@@ -22,22 +38,31 @@ Easy Pruning was created to solve this gap with a predictable, plugin-first appr
 - **Rule-based and inspectable**: behavior is deterministic and easy to reason about
 - **Safety-first retention**: preserve user/system + recent context first
 - **Operational visibility**: pruning decisions are visible in logs
+- **Context Safety**: trims oversized context in memory only before each agent run, while preserving safety-critical context and recent conversation continuity. On-disk `*.jsonl` history remains unchanged for auditability and traceability.
 
 In short: it helps teams keep long sessions usable, reduce context waste, and avoid avoidable model interruptions.
 
 ---
 
-## Why users choose Easy Pruning
+## Why users choose **OpenClaw Easy Pruning**
 
-- Keep conversations alive longer without manual cleanup
-- Reduce token waste from stale tool/process output
-- Lower risk of `context_length_exceeded` during heavy workflows
-- Stay future-compatible with OpenClaw updates via standalone plugin design
-- Start simple today, extend later (strategy-based architecture)
+- ✅ Keep long-running OpenClaw sessions usable without manual transcript cleanup
+- ✅ Reduce token waste from stale tool/process-heavy content
+- ✅ Lower risk of `context_length_exceeded` in real production workflows
+- ✅ Preserve critical intent (system/user + recent context) while trimming old noise
+- ✅ Stay future-compatible with OpenClaw updates through standalone plugin design
+- ✅ Start with deterministic rules now, extend to smarter strategies later
+
+### Best fit scenarios
+
+- Multi-hour debugging, research, or operations sessions
+- Tool-heavy conversations with large intermediate outputs
+- Teams that need predictable, auditable pruning behavior
+- Operators who want context stability without touching OpenClaw core
 
 ---
 
-## Status
+## 📌 Status
 
 - Version: `0.2.0`
 - Runtime entry: `dist/index.js`
@@ -98,7 +123,7 @@ Enable plugin entry:
         "enabled": true,
         "config": {
           "pruning_threshold": 120000,
-          "trigger_every_n_tokens": 6000,
+          "trigger_every_n_tokens": 60000,
           "keep_recent_tokens": 24000,
           "keep_recent_messages": 12,
           "soft_threshold": 0.6,
@@ -186,3 +211,6 @@ easy-pruning-plugin/
 ├── CONTRIBUTING.md
 └── RELEASE.md
 ```
+
+## License
+MIT License
