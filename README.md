@@ -146,7 +146,6 @@ Enable plugin entry:
   "trigger_every_n_tokens": 5000,
   "keep_recent_tokens": 10000,
   "keep_recent_messages": 10,
-  "keep_rencent_message": 10,
   "soft_threshold": 0.7,
   "hard_threshold": 0.85,
   "detail_threshold": 0.95,
@@ -163,7 +162,6 @@ Enable plugin entry:
 ```
 
 ### Notes
-- `keep_rencent_message` is a backward-compatible alias (typo support).
 - `soft_threshold`, `hard_threshold`, `detail_threshold`:
   - `<1` means percentage of current context
   - `>=1` means absolute token position from context start
