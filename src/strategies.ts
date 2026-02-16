@@ -1,28 +1,42 @@
-import type { EasyPruningConfig, MessageLike, MessageZone } from "./pruner.js";
+import type {
+  EasyPruningConfig,
+  Logger,
+  MessageLike,
+  MessageZone,
+  SummaryProvider,
+} from "./pruner.js";
 
 export type StrategyContext = {
   config: EasyPruningConfig;
   zone: MessageZone;
 };
 
+export type StrategyDeps = {
+  logger?: Logger;
+  summaryProvider?: SummaryProvider;
+};
+
 export interface PruningStrategy {
   name: "soft" | "hard" | "detail";
-  apply(message: MessageLike, ctx: StrategyContext): MessageLike;
+  apply(message: MessageLike, ctx: StrategyContext): Promise<MessageLike>;
 }
 
-export function createStrategies(config: EasyPruningConfig): Record<"soft" | "hard" | "detail", PruningStrategy> {
+export function createStrategies(
+  config: EasyPruningConfig,
+  deps: StrategyDeps = {},
+): Record<"soft" | "hard" | "detail", PruningStrategy> {
   return {
     soft: {
       name: "soft",
-      apply: (message) => applySoftPruning(message, config),
+      apply: async (message) => applySoftPruning(message, config),
     },
     hard: {
       name: "hard",
-      apply: (message) => applyHardPruning(message, config),
+      apply: async (message) => applyHardPruning(message, config),
     },
     detail: {
       name: "detail",
-      apply: (message) => applyDetailPruning(message, config),
+      apply: async (message) => applyDetailPruning(message, config, deps),
     },
   };
 }
@@ -148,6 +162,59 @@ function extractFinalSummary(text: string): string | null {
   return last.length > 0 ? last : null;
 }
 
+function extractLastAssistantReply(content: unknown): string | null {
+  if (typeof content === "string") {
+    return extractFinalSummary(content) ?? (content.trim() || null);
+  }
+
+  if (Array.isArray(content)) {
+    const textBlocks = content
+      .filter(
+        (block) =>
+          block &&
+          typeof block === "object" &&
+          (block as Record<string, unknown>).type === "text" &&
+          typeof (block as Record<string, unknown>).text === "string",
+      )
+      .map((block) => String((block as Record<string, unknown>).text ?? "").trim())
+      .filter(Boolean);
+
+    if (textBlocks.length > 0) {
+      return textBlocks[textBlocks.length - 1];
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+function clipText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars <= 3) {
+    return text.slice(0, Math.max(0, maxChars));
+  }
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function heuristicSummary(text: string, maxChars: number): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) {
+    return "";
+  }
+
+  const key = extractFinalSummary(text) || clean;
+  if (key.length <= maxChars) {
+    return key;
+  }
+
+  const head = key.slice(0, Math.floor(maxChars * 0.6));
+  const tail = key.slice(-Math.max(0, Math.floor(maxChars * 0.25)));
+  return clipText(`${head} ... ${tail}`, maxChars);
+}
+
 export function applySoftPruning(message: MessageLike, config: EasyPruningConfig): MessageLike {
   const role = roleOf(message);
   if (!isToolResultRole(role)) {
@@ -190,7 +257,25 @@ export function applyHardPruning(message: MessageLike, config: EasyPruningConfig
   };
 }
 
-export function applyDetailPruning(message: MessageLike, config: EasyPruningConfig): MessageLike {
+export async function applyDetailPruning(
+  message: MessageLike,
+  config: EasyPruningConfig,
+  deps: StrategyDeps = {},
+): Promise<MessageLike> {
+  const mode = config.detail_pruning_mode;
+
+  if (mode === "keep_last_reply") {
+    return applyDetailKeepLastReply(message, config);
+  }
+
+  if (mode === "model_summary") {
+    return applyDetailModelSummary(message, config, deps);
+  }
+
+  return applyDetailDefault(message, config);
+}
+
+function applyDetailDefault(message: MessageLike, config: EasyPruningConfig): MessageLike {
   const role = roleOf(message);
 
   // Keep user/system out of detail pruning entirely (extra safety)
@@ -255,4 +340,86 @@ export function applyDetailPruning(message: MessageLike, config: EasyPruningConf
   }
 
   return message;
+}
+
+function applyDetailKeepLastReply(message: MessageLike, config: EasyPruningConfig): MessageLike {
+  const role = roleOf(message);
+
+  if (role === "user" || role === "system") {
+    return message;
+  }
+
+  if (isAssistantRole(role)) {
+    const lastReply = extractLastAssistantReply(message.content);
+    if (!lastReply) {
+      return {
+        ...message,
+        content: preserveContentShape(message.content, config.detail_placeholder),
+      };
+    }
+
+    const value = `[Last assistant reply kept]\n\n${lastReply}`;
+    return {
+      ...message,
+      content: preserveContentShape(message.content, value),
+    };
+  }
+
+  if (isToolResultRole(role)) {
+    if (config.skip_tools_with_images && hasImageContent(message.content)) {
+      return message;
+    }
+
+    return {
+      ...message,
+      content: preserveContentShape(message.content, config.detail_placeholder),
+    };
+  }
+
+  return message;
+}
+
+async function applyDetailModelSummary(
+  message: MessageLike,
+  config: EasyPruningConfig,
+  deps: StrategyDeps,
+): Promise<MessageLike> {
+  const role = roleOf(message);
+
+  if (role === "user" || role === "system") {
+    return message;
+  }
+
+  if (isToolResultRole(role) && config.skip_tools_with_images && hasImageContent(message.content)) {
+    return message;
+  }
+
+  const raw = toUnifiedText(message.content);
+  if (!raw.trim()) {
+    return {
+      ...message,
+      content: preserveContentShape(message.content, config.detail_placeholder),
+    };
+  }
+
+  const provider = deps.summaryProvider;
+  let summary: string | null = null;
+
+  if (provider) {
+    try {
+      summary = await provider(raw, { role, maxChars: config.detail_summary_max_chars });
+    } catch (error) {
+      deps.logger?.warn?.(`[EasyPruning] model summary failed, fallback to heuristic: ${String(error)}`);
+    }
+  }
+
+  if (!summary || !summary.trim()) {
+    summary = heuristicSummary(raw, config.detail_summary_max_chars);
+  }
+
+  const value = `[Model summary (${role})]\n\n${clipText(summary.trim(), config.detail_summary_max_chars)}`;
+  return {
+    ...message,
+    content: preserveContentShape(message.content, value),
+  };
 }

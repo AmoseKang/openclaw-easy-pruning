@@ -1,4 +1,4 @@
-import { createStrategies } from "./strategies.js";
+import { createStrategies, type StrategyDeps } from "./strategies.js";
 
 export type Logger = {
   debug?: (message: string) => void;
@@ -8,6 +8,13 @@ export type Logger = {
 };
 
 const TOKENS_PER_CHAR_ESTIMATE = 4;
+
+export type DetailPruningMode = "default" | "keep_last_reply" | "model_summary";
+
+export type SummaryProvider = (
+  input: string,
+  options: { role: string; maxChars: number },
+) => Promise<string | null>;
 
 export interface EasyPruningConfig {
   pruning_threshold: number;
@@ -28,6 +35,13 @@ export interface EasyPruningConfig {
   hard_clear_placeholder: string;
   detail_placeholder: string;
   skip_tools_with_images: boolean;
+  detail_pruning_mode: DetailPruningMode;
+  detail_summary_model?: string;
+  detail_summary_max_chars: number;
+  detail_summary_timeout_ms: number;
+  debug_pruning_io: boolean;
+  debug_summary_io: boolean;
+  debug_preview_chars: number;
   // optional, for warning-only check in plugin register
   compaction_threshold_hint?: number;
 }
@@ -57,6 +71,17 @@ export type PruningStats = {
     hard: number;
     detail: number;
   };
+};
+
+export type PruningDebugEntry = {
+  index: number;
+  role: string;
+  zone: Exclude<MessageZone, "none">;
+  beforeTokens: number;
+  afterTokens: number;
+  deletedTokens: number;
+  beforePreview: string;
+  afterPreview: string;
 };
 
 type SessionTriggerState = {
@@ -118,11 +143,35 @@ export function normalizeConfig(
   cfg.hard_clear_placeholder = String(cfg.hard_clear_placeholder || defaults.hard_clear_placeholder);
   cfg.detail_placeholder = String(cfg.detail_placeholder || defaults.detail_placeholder);
 
+  cfg.detail_pruning_mode = normalizeDetailMode(cfg.detail_pruning_mode, defaults.detail_pruning_mode);
+  cfg.detail_summary_max_chars = safePositiveInt(
+    cfg.detail_summary_max_chars,
+    defaults.detail_summary_max_chars,
+  );
+  cfg.detail_summary_timeout_ms = safePositiveInt(
+    cfg.detail_summary_timeout_ms,
+    defaults.detail_summary_timeout_ms,
+  );
+  cfg.debug_preview_chars = safePositiveInt(cfg.debug_preview_chars, defaults.debug_preview_chars);
+  cfg.debug_pruning_io = Boolean(cfg.debug_pruning_io);
+  cfg.debug_summary_io = Boolean(cfg.debug_summary_io);
+
+  if (typeof cfg.detail_summary_model === "string" && cfg.detail_summary_model.trim().length === 0) {
+    cfg.detail_summary_model = undefined;
+  }
+
   return cfg;
 }
 
-export function createBeforeAgentStartHandler(config: EasyPruningConfig, logger: Logger) {
-  const strategies = createStrategies(config);
+export function createBeforeAgentStartHandler(
+  config: EasyPruningConfig,
+  logger: Logger,
+  deps?: StrategyDeps,
+) {
+  const strategies = createStrategies(config, {
+    logger,
+    summaryProvider: deps?.summaryProvider,
+  });
 
   return async (
     event: { messages?: unknown[] },
@@ -161,7 +210,7 @@ export function createBeforeAgentStartHandler(config: EasyPruningConfig, logger:
       return;
     }
 
-    const result = applyPruningWithStats(messages, config, strategies);
+    const result = await applyPruningWithStats(messages, config, strategies);
     const changed = !sameArrayShallow(messages, result.messages);
 
     // Update trigger state whenever a pruning check is performed at threshold.
@@ -191,22 +240,29 @@ export function createBeforeAgentStartHandler(config: EasyPruningConfig, logger:
       `[EasyPruning][Gateway] prune#${state.pruneCount} session=${key} before=${result.stats.contextTokensBefore}t after=${result.stats.contextTokensAfter}t deleted=${result.stats.deletedTokens}t (${pct}%) changed=${result.stats.changedMessages}msg ` +
         `[soft:${result.stats.zoneChanged.soft}/-${result.stats.zoneDeletedTokens.soft}t hard:${result.stats.zoneChanged.hard}/-${result.stats.zoneDeletedTokens.hard}t detail:${result.stats.zoneChanged.detail}/-${result.stats.zoneDeletedTokens.detail}t]`,
     );
+
+    if (config.debug_pruning_io && result.debugEntries.length > 0) {
+      logger.info?.(
+        `[EasyPruning][Debug] session=${key} prune#${state.pruneCount} entries=${JSON.stringify(result.debugEntries)}`,
+      );
+    }
   };
 }
 
-export function applyPruning(
+export async function applyPruning(
   messages: unknown[],
   config: EasyPruningConfig,
   strategies = createStrategies(config),
-): unknown[] {
-  return applyPruningWithStats(messages, config, strategies).messages;
+): Promise<unknown[]> {
+  const result = await applyPruningWithStats(messages, config, strategies);
+  return result.messages;
 }
 
-export function applyPruningWithStats(
+export async function applyPruningWithStats(
   messages: unknown[],
   config: EasyPruningConfig,
   strategies = createStrategies(config),
-): { messages: unknown[]; stats: PruningStats } {
+): Promise<{ messages: unknown[]; stats: PruningStats; debugEntries: PruningDebugEntry[] }> {
   const metas = buildMessageMeta(messages);
   const beforeTokens = metas.length > 0 ? metas[metas.length - 1].tokenEnd : 0;
 
@@ -222,7 +278,7 @@ export function applyPruningWithStats(
   };
 
   if (metas.length === 0) {
-    return { messages, stats: emptyStats };
+    return { messages, stats: emptyStats, debugEntries: [] };
   }
 
   const totalTokens = metas[metas.length - 1].tokenEnd;
@@ -270,6 +326,8 @@ export function applyPruningWithStats(
     protectedMessages: protectedIndices.size,
   };
 
+  const debugEntries: PruningDebugEntry[] = [];
+
   for (const meta of metas) {
     if (protectedIndices.has(meta.index)) {
       continue;
@@ -285,7 +343,7 @@ export function applyPruningWithStats(
     }
 
     const original = meta.message;
-    const next = strategies[zone].apply(original, { config, zone });
+    const next = await strategies[zone].apply(original, { config, zone });
 
     if (next !== original) {
       out[meta.index] = next;
@@ -298,18 +356,31 @@ export function applyPruningWithStats(
       stats.changedMessages += 1;
       stats.zoneChanged[zone] += 1;
       stats.zoneDeletedTokens[zone] += delta;
+
+      if (config.debug_pruning_io) {
+        debugEntries.push({
+          index: meta.index,
+          role: meta.role,
+          zone,
+          beforeTokens: before,
+          afterTokens: after,
+          deletedTokens: delta,
+          beforePreview: previewMessageContent(original.content, config.debug_preview_chars),
+          afterPreview: previewMessageContent((next as MessageLike).content, config.debug_preview_chars),
+        });
+      }
     }
   }
 
   if (!changed) {
-    return { messages, stats };
+    return { messages, stats, debugEntries };
   }
 
   const afterTokens = estimateContextTokens(out);
   stats.contextTokensAfter = afterTokens;
   stats.deletedTokens = Math.max(0, stats.contextTokensBefore - afterTokens);
 
-  return { messages: out, stats };
+  return { messages: out, stats, debugEntries };
 }
 
 function resolveZone(
@@ -432,6 +503,13 @@ function safeNonNegativeNumber(value: number, fallback: number): number {
   return value;
 }
 
+function normalizeDetailMode(value: unknown, fallback: DetailPruningMode): DetailPruningMode {
+  if (value === "default" || value === "keep_last_reply" || value === "model_summary") {
+    return value;
+  }
+  return fallback;
+}
+
 function sameArrayShallow(a: unknown[], b: unknown[]): boolean {
   if (a.length !== b.length) {
     return false;
@@ -444,4 +522,27 @@ function sameArrayShallow(a: unknown[], b: unknown[]): boolean {
   }
 
   return true;
+}
+
+function previewMessageContent(content: unknown, maxChars: number): string {
+  let raw = "";
+
+  if (typeof content === "string") {
+    raw = content;
+  } else {
+    try {
+      raw = JSON.stringify(content);
+    } catch {
+      raw = String(content ?? "");
+    }
+  }
+
+  const compact = raw.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxChars) {
+    return compact;
+  }
+  if (maxChars <= 3) {
+    return compact.slice(0, Math.max(0, maxChars));
+  }
+  return `${compact.slice(0, maxChars - 3)}...`;
 }

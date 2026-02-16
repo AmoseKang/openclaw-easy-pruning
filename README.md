@@ -2,9 +2,9 @@
 
 <p align="left">
   <img alt="OpenClaw Plugin" src="https://img.shields.io/badge/OpenClaw-Plugin-5B6CFF" />
-  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-00A86B" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.3.1-00A86B" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Strict-3178C6" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-7%2F7%20passing-2EA043" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-12%2F12%20passing-2EA043" />
   <img alt="License" src="https://img.shields.io/badge/license-MIT-orange" />
 </p>
 
@@ -64,9 +64,9 @@ In short: it helps teams keep long sessions usable, reduce context waste, and av
 
 ## 📌 Status
 
-- Version: `0.2.0`
+- Version: `0.3.1`
 - Runtime entry: `dist/index.js`
-- Test status: `7/7` passing
+- Test status: `12/12` passing
 - Production profile validated (threshold restored after verification)
 
 ---
@@ -90,6 +90,20 @@ In short: it helps teams keep long sessions usable, reduce context waste, and av
 - Supports threshold values as:
   - ratio (`<1`)
   - absolute token position (`>=1`)
+
+### Detail pruning modes (new)
+
+`detail_pruning_mode` supports 3 options:
+
+1. `default` (default)
+   - keep existing detail behavior
+   - assistant keeps text blocks, process-heavy blocks are dropped
+2. `keep_last_reply`
+   - keep only the latest assistant reply text in detail zone
+   - older process/tool details are replaced
+3. `model_summary`
+   - generate concise summary for detail-zone messages
+   - tries model API first, and falls back to heuristic summary when unavailable
 
 ---
 
@@ -123,12 +137,13 @@ Enable plugin entry:
         "enabled": true,
         "config": {
           "pruning_threshold": 120000,
-          "trigger_every_n_tokens": 60000,
+          "trigger_every_n_tokens": 6000,
           "keep_recent_tokens": 24000,
           "keep_recent_messages": 12,
           "soft_threshold": 0.6,
           "hard_threshold": 0.78,
-          "detail_threshold": 0.9
+          "detail_threshold": 0.9,
+          "detail_pruning_mode": "default"
         }
       }
     }
@@ -146,9 +161,17 @@ Enable plugin entry:
   "trigger_every_n_tokens": 5000,
   "keep_recent_tokens": 10000,
   "keep_recent_messages": 10,
+  "keep_rencent_message": 10,
   "soft_threshold": 0.7,
   "hard_threshold": 0.85,
   "detail_threshold": 0.95,
+  "detail_pruning_mode": "default",
+  "detail_summary_model": "gpt-5.2",
+  "detail_summary_max_chars": 600,
+  "detail_summary_timeout_ms": 8000,
+  "debug_pruning_io": false,
+  "debug_summary_io": false,
+  "debug_preview_chars": 240,
   "soft_trim": {
     "max_chars": 4000,
     "head_chars": 1500,
@@ -162,9 +185,83 @@ Enable plugin entry:
 ```
 
 ### Notes
+- `keep_rencent_message` is a backward-compatible typo alias for `keep_recent_messages`.
 - `soft_threshold`, `hard_threshold`, `detail_threshold`:
   - `<1` means percentage of current context
   - `>=1` means absolute token position from context start
+- `detail_pruning_mode=model_summary`:
+  - uses available plugin model APIs when exposed by runtime (`generateText` / `callModel` / `ask`)
+  - model selection is from `detail_summary_model` (e.g. `step-3.5`)
+  - automatically falls back to heuristic summary if model API is unavailable or times out
+
+### How model summary is called
+
+When `detail_pruning_mode` is `model_summary`, the plugin builds a summary prompt and calls the first available runtime API in this order:
+
+1. `api.generateText(...)`
+2. `api.callModel(...)`
+3. `api.ask(...)`
+
+Parameters include:
+- `model`: `detail_summary_model` (optional)
+- `maxTokens`: 280 (internal cap)
+- timeout: `detail_summary_timeout_ms`
+
+If all model calls fail or timeout, it falls back to heuristic summarization.
+
+### Example: use step-3.5 for summary
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "easy-pruning": {
+        "enabled": true,
+        "config": {
+          "detail_pruning_mode": "model_summary",
+          "detail_summary_model": "step-3.5",
+          "detail_summary_max_chars": 600,
+          "detail_summary_timeout_ms": 8000
+        }
+      }
+    }
+  }
+}
+```
+
+### Summary output examples (from real mode tests)
+
+- `default`
+```text
+[{"type":"text","text":"This is the final actionable answer for user."}]
+```
+
+- `keep_last_reply`
+```text
+[{"type":"text","text":"[Last assistant reply kept]\n\nThis is the final actionable answer for user."}]
+```
+
+- `model_summary`
+```text
+[{"type":"text","text":"[Model summary (assistant)]\n\nShort model summary for follow-up context."}]
+```
+
+### Debug interface (new in 0.3.1)
+
+Enable runtime debug logs from plugin config:
+
+```json
+{
+  "debug_pruning_io": true,
+  "debug_summary_io": true,
+  "debug_preview_chars": 240
+}
+```
+
+What each switch does:
+- `debug_pruning_io`: logs per-message pruning entries (zone, role, before/after tokens, deleted tokens, previews)
+- `debug_summary_io`: logs model-summary prompt/output previews and candidate call failures
+- `debug_preview_chars`: truncation length for debug previews in logs
 
 ---
 
@@ -178,6 +275,31 @@ Typical logs:
 [EasyPruning][Gateway] skip: cooldown session=<id> context=<t> grew=<t> required=<t>
 ```
 
+Debug logs (when enabled):
+
+```text
+[EasyPruning][Debug] summary_api=generateText model=step-3.5 role=assistant prompt=... output=...
+[EasyPruning][Debug] session=<id> prune#<n> entries=[{"index":4,"role":"toolResult","zone":"detail","beforeTokens":512,"afterTokens":72,"deletedTokens":440,...}]
+```
+
+---
+
+## Measuring token savings
+
+Use pruning logs to quantify savings:
+
+```text
+[EasyPruning][Gateway] prune#7 ... before=28178t after=26200t deleted=1978t (7.0%) ...
+```
+
+Aggregate multiple events:
+
+- total deleted tokens = sum(`deleted`)
+- average reduction = avg(`deleted / before`)
+- per-zone impact = sum of `soft/hard/detail` deletion terms in log tail
+
+Tip: keep debug disabled for normal operations; enable it briefly for diagnostics.
+
 ---
 
 ## Development
@@ -188,6 +310,20 @@ npm run clean
 npm run build
 npm test
 npm pack --dry-run
+```
+
+### Mode testing matrix
+
+The test suite validates all detail modes:
+
+- `default`
+- `keep_last_reply`
+- `model_summary` (with mocked summary provider)
+
+Run:
+
+```bash
+npm test
 ```
 
 ---

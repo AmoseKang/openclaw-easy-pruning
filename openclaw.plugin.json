@@ -1,7 +1,7 @@
 {
   "id": "easy-pruning",
   "name": "OpenClaw Easy Pruning",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Rule-based session pruning for any model: soft/hard/detail pruning before agent run, in-memory only.",
   "entry": "./dist/index.js",
   "configSchema": {
@@ -17,7 +17,7 @@
       "trigger_every_n_tokens": {
         "type": "number",
         "minimum": 1,
-        "default": 40000,
+        "default": 5000,
         "description": "Minimum estimated token growth since last pruning trigger"
       },
       "keep_recent_tokens": {
@@ -54,6 +54,44 @@
         "minimum": 0,
         "default": 0.95,
         "description": "Detail mode start. <1 = ratio, >=1 = absolute token position"
+      },
+      "detail_pruning_mode": {
+        "type": "string",
+        "enum": ["default", "keep_last_reply", "model_summary"],
+        "default": "default",
+        "description": "Detail pruning strategy mode"
+      },
+      "detail_summary_model": {
+        "type": "string",
+        "description": "Optional model name for model_summary mode"
+      },
+      "detail_summary_max_chars": {
+        "type": "number",
+        "minimum": 50,
+        "default": 600,
+        "description": "Maximum summary chars in model_summary mode"
+      },
+      "detail_summary_timeout_ms": {
+        "type": "number",
+        "minimum": 500,
+        "default": 8000,
+        "description": "Timeout for model summary generation"
+      },
+      "debug_pruning_io": {
+        "type": "boolean",
+        "default": false,
+        "description": "Log per-message pruning debug entries with before/after token estimates"
+      },
+      "debug_summary_io": {
+        "type": "boolean",
+        "default": false,
+        "description": "Log model-summary prompt/output previews and candidate failures"
+      },
+      "debug_preview_chars": {
+        "type": "number",
+        "minimum": 40,
+        "default": 240,
+        "description": "Preview character limit for debug logs"
       },
       "soft_trim": {
         "type": "object",
@@ -116,6 +154,18 @@
     "detail_threshold": {
       "label": "Detail Threshold",
       "help": "<1 for ratio (0~1), >=1 for absolute token position"
+    },
+    "detail_pruning_mode": {
+      "label": "Detail Pruning Mode",
+      "help": "default | keep_last_reply | model_summary"
+    },
+    "debug_pruning_io": {
+      "label": "Debug Pruning I/O",
+      "help": "Enable detailed per-message pruning logs"
+    },
+    "debug_summary_io": {
+      "label": "Debug Summary I/O",
+      "help": "Enable model summary prompt/output preview logs"
     }
   }
 }
