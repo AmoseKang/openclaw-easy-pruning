@@ -8,7 +8,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-orange" />
 </p>
 
-A context-management **OpenClaw plugin** for rule-based context pruning.
+A context-management **OpenClaw plugin** for rule-based context pruning for all scenarios.
 
 ---
 
@@ -34,7 +34,7 @@ Large real-world OpenClaw sessions often fail for practical reasons:
 Easy Pruning was created to solve this gap with a predictable, plugin-first approach:
 
 - **No core patching**: safer upgrades, lower maintenance risk
-- **Model-agnostic**: works across providers/models (while official implementations only works for claude)
+- **Model-agnostic**: works across providers/models (while official implementation only works for claude)
 - **Rule-based and inspectable**: behavior is deterministic and easy to manage
 - **Safety-first retention**: preserve user/system + recent context first
 - **Operational visibility**: pruning decisions are visible in logs
