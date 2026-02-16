@@ -38,8 +38,7 @@ Easy Pruning was created to solve this gap with a predictable, plugin-first appr
 - **Rule-based and inspectable**: behavior is deterministic and easy to manage
 - **Safety-first retention**: preserve user/system + recent context first
 - **Operational visibility**: pruning decisions are visible in logs
-- **Context Safety**: trims oversized context in memory only before each agent run, while preserving safety-critical context and recent conversation continuity
-- **Memory Safety**: on-disk `*.jsonl` history remains unchanged for auditability and traceability.
+- **Memory Safety**: on-disk `*.jsonl` history remains unchanged for auditability and traceability
 
 In short: it helps teams keep long sessions usable, reduce context waste, and avoid avoidable model interruptions.
 
