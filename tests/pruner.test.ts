@@ -70,31 +70,36 @@ describe("strategy functions", () => {
     expect(out.content).toBe("[CLEARED]");
   });
 
-  it("detail pruning (default) keeps text blocks for assistant", async () => {
+  it("detail pruning (default) preserves toolCall linkage for assistant", async () => {
     const msg = {
       role: "assistant",
       content: [
         { type: "thinking", thinking: "secret" },
-        { type: "toolCall", toolName: "read", arguments: { path: "x" } },
+        { type: "toolCall", id: "call_123", name: "read", arguments: { path: "x", data: "A".repeat(500) } },
         { type: "text", text: "final reply" },
       ],
     };
 
     const out = await applyDetailPruning(msg, defaults);
     expect(Array.isArray(out.content)).toBe(true);
-    const blocks = out.content as Array<{ type: string; text?: string }>;
-    expect(blocks.length).toBe(1);
-    expect(blocks[0].type).toBe("text");
-    expect(blocks[0].text).toBe("final reply");
+    const blocks = out.content as Array<{ type: string; id?: string; text?: string; arguments?: unknown }>;
+    const toolCall = blocks.find((b) => b.type === "toolCall");
+    expect(toolCall).toBeTruthy();
+    expect(toolCall?.id).toBe("call_123");
+    expect(typeof JSON.stringify(toolCall?.arguments)).toBe("string");
+
+    const last = blocks[blocks.length - 1];
+    expect(last.type).toBe("text");
+    expect(String(last.text)).toContain("final reply");
   });
 
-  it("detail pruning keep_last_reply keeps only latest assistant text", async () => {
+  it("detail pruning keep_last_reply keeps latest text and preserves toolCall", async () => {
     const cfg = { ...defaults, detail_pruning_mode: "keep_last_reply" as const };
     const msg = {
       role: "assistant",
       content: [
         { type: "text", text: "first reply" },
-        { type: "toolCall", toolName: "read", arguments: { path: "x" } },
+        { type: "toolCall", id: "call_456", name: "read", arguments: { path: "x" } },
         { type: "text", text: "last reply" },
       ],
     };
@@ -103,6 +108,7 @@ describe("strategy functions", () => {
     const serialized = JSON.stringify(out.content);
     expect(serialized).toContain("Last assistant reply kept");
     expect(serialized).toContain("last reply");
+    expect(serialized).toContain("call_456");
   });
 
   it("detail pruning model_summary uses summary provider", async () => {
@@ -115,6 +121,27 @@ describe("strategy functions", () => {
 
     expect(String(out.content)).toContain("Model summary");
     expect(String(out.content)).toContain("Model generated short summary");
+  });
+
+  it("detail pruning model_summary preserves toolCall linkage for assistant", async () => {
+    const cfg = { ...defaults, detail_pruning_mode: "model_summary" as const };
+    const msg = {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "long internal reasoning" },
+        { type: "toolCall", id: "call_789", name: "web_search", arguments: { query: "A".repeat(500) } },
+        { type: "text", text: "long textual explanation" },
+      ],
+    };
+
+    const out = await applyDetailPruning(msg, cfg, {
+      summaryProvider: async () => "summarized assistant context",
+    });
+
+    const serialized = JSON.stringify(out.content);
+    expect(serialized).toContain("call_789");
+    expect(serialized).toContain("Model summary (assistant)");
+    expect(serialized).toContain("summarized assistant context");
   });
 });
 

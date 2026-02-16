@@ -57,6 +57,191 @@ function isAssistantRole(role: string): boolean {
   return role === "assistant";
 }
 
+function isToolCallBlock(block: unknown): block is Record<string, unknown> {
+  if (!block || typeof block !== "object") {
+    return false;
+  }
+  return String((block as Record<string, unknown>).type ?? "") === "toolCall";
+}
+
+function hasToolCallBlocks(content: unknown): boolean {
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((b) => isToolCallBlock(b));
+}
+
+function clipUnknownString(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  if (maxChars <= 3) {
+    return value.slice(0, Math.max(0, maxChars));
+  }
+  return `${value.slice(0, maxChars - 3)}...`;
+}
+
+function compactUnknown(
+  input: unknown,
+  opts: { depth: number; maxArray: number; maxObjectKeys: number; maxStringChars: number },
+): unknown {
+  const { depth, maxArray, maxObjectKeys, maxStringChars } = opts;
+
+  if (input == null) {
+    return input;
+  }
+
+  if (typeof input === "string") {
+    return clipUnknownString(input, maxStringChars);
+  }
+
+  if (typeof input === "number" || typeof input === "boolean") {
+    return input;
+  }
+
+  if (depth <= 0) {
+    return "[pruned]";
+  }
+
+  if (Array.isArray(input)) {
+    const sliced = input.slice(0, maxArray).map((v) =>
+      compactUnknown(v, { depth: depth - 1, maxArray, maxObjectKeys, maxStringChars }),
+    );
+    if (input.length > maxArray) {
+      sliced.push(`[+${input.length - maxArray} items]`);
+    }
+    return sliced;
+  }
+
+  if (typeof input === "object") {
+    const out: Record<string, unknown> = {};
+    const entries = Object.entries(input as Record<string, unknown>).slice(0, maxObjectKeys);
+    for (const [k, v] of entries) {
+      out[k] = compactUnknown(v, {
+        depth: depth - 1,
+        maxArray,
+        maxObjectKeys,
+        maxStringChars,
+      });
+    }
+    const total = Object.keys(input as Record<string, unknown>).length;
+    if (total > maxObjectKeys) {
+      out.__trimmedKeys = total - maxObjectKeys;
+    }
+    return out;
+  }
+
+  return String(input);
+}
+
+function compactToolCallBlock(
+  block: Record<string, unknown>,
+  config: EasyPruningConfig,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    type: "toolCall",
+  };
+
+  if (typeof block.id === "string") {
+    out.id = block.id;
+  }
+  if (typeof block.name === "string") {
+    out.name = block.name;
+  }
+
+  if (block.arguments !== undefined) {
+    out.arguments = compactUnknown(block.arguments, {
+      depth: 3,
+      maxArray: 16,
+      maxObjectKeys: 24,
+      maxStringChars: Math.max(120, Math.floor(config.debug_preview_chars * 2)),
+    });
+  }
+
+  if (typeof block.partialJson === "string") {
+    out.partialJson = clipUnknownString(block.partialJson, Math.max(120, config.debug_preview_chars));
+  }
+
+  return out;
+}
+
+function extractAssistantBlocks(content: unknown): {
+  toolCalls: Array<Record<string, unknown>>;
+  textLike: string;
+  lastText: string | null;
+} {
+  if (!Array.isArray(content)) {
+    return { toolCalls: [], textLike: "", lastText: null };
+  }
+
+  const toolCalls: Array<Record<string, unknown>> = [];
+  const textParts: string[] = [];
+  let lastText: string | null = null;
+
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+
+    const obj = block as Record<string, unknown>;
+    const type = String(obj.type ?? "");
+
+    if (type === "toolCall") {
+      toolCalls.push(obj);
+      continue;
+    }
+
+    if (type === "text" && typeof obj.text === "string") {
+      textParts.push(obj.text);
+      lastText = obj.text;
+      continue;
+    }
+
+    if (type === "thinking" && typeof obj.thinking === "string") {
+      textParts.push(obj.thinking);
+      continue;
+    }
+  }
+
+  return {
+    toolCalls,
+    textLike: textParts.join("\n"),
+    lastText,
+  };
+}
+
+function buildAssistantContentWithToolCalls(
+  content: unknown,
+  config: EasyPruningConfig,
+  mode: "default" | "keep_last_reply" | "model_summary",
+  modelSummary?: string,
+): unknown {
+  const { toolCalls, textLike, lastText } = extractAssistantBlocks(content);
+  if (toolCalls.length === 0) {
+    return content;
+  }
+
+  const keptToolCalls = toolCalls.map((b) => compactToolCallBlock(b, config));
+
+  let text = "";
+  if (mode === "keep_last_reply") {
+    const core = lastText?.trim() || "";
+    text = core
+      ? `[Last assistant reply kept]\n\n${clipText(core, config.detail_summary_max_chars)}`
+      : config.detail_placeholder;
+  } else if (mode === "model_summary") {
+    const core = (modelSummary || "").trim();
+    text = core
+      ? `[Model summary (assistant)]\n\n${clipText(core, config.detail_summary_max_chars)}`
+      : config.detail_placeholder;
+  } else {
+    const core = (lastText || textLike || "").trim();
+    text = core ? clipText(core, config.soft_trim.max_chars) : config.detail_placeholder;
+  }
+
+  return [...keptToolCalls, textBlock(text)];
+}
+
 function hasImageContent(content: unknown): boolean {
   if (typeof content === "string") {
     const lower = content.toLowerCase();
@@ -285,6 +470,15 @@ function applyDetailDefault(message: MessageLike, config: EasyPruningConfig): Me
 
   if (isAssistantRole(role)) {
     const content = message.content;
+
+    // Critical safety: keep toolCall blocks (id/name) to preserve toolResult call_id linkage.
+    if (hasToolCallBlocks(content)) {
+      return {
+        ...message,
+        content: buildAssistantContentWithToolCalls(content, config, "default"),
+      };
+    }
+
     if (typeof content === "string") {
       return message;
     }
@@ -350,6 +544,13 @@ function applyDetailKeepLastReply(message: MessageLike, config: EasyPruningConfi
   }
 
   if (isAssistantRole(role)) {
+    if (hasToolCallBlocks(message.content)) {
+      return {
+        ...message,
+        content: buildAssistantContentWithToolCalls(message.content, config, "keep_last_reply"),
+      };
+    }
+
     const lastReply = extractLastAssistantReply(message.content);
     if (!lastReply) {
       return {
@@ -415,6 +616,14 @@ async function applyDetailModelSummary(
 
   if (!summary || !summary.trim()) {
     summary = heuristicSummary(raw, config.detail_summary_max_chars);
+  }
+
+  // Critical safety: assistant toolCall blocks must remain linkable by call_id.
+  if (isAssistantRole(role) && hasToolCallBlocks(message.content)) {
+    return {
+      ...message,
+      content: buildAssistantContentWithToolCalls(message.content, config, "model_summary", summary),
+    };
   }
 
   const value = `[Model summary (${role})]\n\n${clipText(summary.trim(), config.detail_summary_max_chars)}`;

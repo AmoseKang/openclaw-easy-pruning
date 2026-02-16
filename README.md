@@ -4,7 +4,7 @@
   <img alt="OpenClaw Plugin" src="https://img.shields.io/badge/OpenClaw-Plugin-5B6CFF" />
   <img alt="Version" src="https://img.shields.io/badge/version-0.3.1-00A86B" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Strict-3178C6" />
-  <img alt="Tests" src="https://img.shields.io/badge/tests-12%2F12%20passing-2EA043" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-13%2F13%20passing-2EA043" />
   <img alt="License" src="https://img.shields.io/badge/license-MIT-orange" />
 </p>
 
@@ -193,6 +193,14 @@ Enable plugin entry:
   - uses available plugin model APIs when exposed by runtime (`generateText` / `callModel` / `ask`)
   - model selection is from `detail_summary_model` (e.g. `step-3.5`)
   - automatically falls back to heuristic summary if model API is unavailable or times out
+
+### Safety & Tool Call Integrity
+
+The pruning engine preserves **tool call linkage** to avoid `call_id` mismatches:
+
+- If an assistant message contains `toolCall` blocks, their `id` and `name` are **always retained** (only `arguments`/`partialJson` are compressed).
+- After detail pruning, the assistant content is reconstructed as `[compact toolCalls] + [summary text]` to maintain structure.
+- This ensures subsequent `toolResult` messages can match their `call_id` without errors.
 
 ### How model summary is called
 

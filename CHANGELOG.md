@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-02-16
+
+### Fixed
+- **Critical toolCall preservation bug**: Detail pruning modes previously removed entire assistant messages containing `toolCall` blocks, breaking `toolResult` linkage by `call_id`.
+  - New `hasToolCallBlocks`, `compactToolCallBlock`, `buildAssistantContentWithToolCalls` keep `id`/`name` skeleton and compress `arguments`/`partialJson`.
+  - All detail modes (`default`, `keep_last_reply`, `model_summary`) now apply toolCall preservation.
+  - Unit tests extended (13/13) to verify toolCall retention across detail modes.
+
 ## [0.3.1] - 2026-02-16
 
 ### Added

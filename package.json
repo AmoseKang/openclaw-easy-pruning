@@ -1,6 +1,6 @@
 {
   "name": "easy-pruning",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "OpenClaw plugin for rule-based, model-agnostic session context pruning",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
