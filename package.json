@@ -1,0 +1,42 @@
+{
+  "name": "easy-pruning",
+  "version": "0.2.0",
+  "description": "Rule-based session pruning plugin for OpenClaw",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist",
+    "check": "npm run build && npm run test",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm run check"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "session-pruning",
+    "context"
+  ],
+  "author": "Nick",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.33",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
+  }
+}

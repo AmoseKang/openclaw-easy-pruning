@@ -1,0 +1,121 @@
+{
+  "id": "easy-pruning",
+  "name": "Easy Pruning",
+  "version": "0.2.0",
+  "description": "Rule-based session pruning for any model: soft/hard/detail pruning before agent run, in-memory only.",
+  "entry": "./dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pruning_threshold": {
+        "type": "number",
+        "minimum": 1,
+        "default": 80000,
+        "description": "Trigger pruning when estimated context tokens reaches this value"
+      },
+      "trigger_every_n_tokens": {
+        "type": "number",
+        "minimum": 1,
+        "default": 5000,
+        "description": "Minimum estimated token growth since last pruning trigger"
+      },
+      "keep_recent_tokens": {
+        "type": "number",
+        "minimum": 0,
+        "default": 10000,
+        "description": "Always preserve this many most-recent tokens"
+      },
+      "keep_recent_messages": {
+        "type": "number",
+        "minimum": 0,
+        "default": 10,
+        "description": "Always preserve this many most-recent messages"
+      },
+      "keep_rencent_message": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Backward-compatible typo alias for keep_recent_messages"
+      },
+      "soft_threshold": {
+        "type": "number",
+        "minimum": 0,
+        "default": 0.7,
+        "description": "Soft mode start. <1 = ratio, >=1 = absolute token position"
+      },
+      "hard_threshold": {
+        "type": "number",
+        "minimum": 0,
+        "default": 0.85,
+        "description": "Hard mode start. <1 = ratio, >=1 = absolute token position"
+      },
+      "detail_threshold": {
+        "type": "number",
+        "minimum": 0,
+        "default": 0.95,
+        "description": "Detail mode start. <1 = ratio, >=1 = absolute token position"
+      },
+      "soft_trim": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "max_chars": {
+            "type": "number",
+            "minimum": 1,
+            "default": 4000
+          },
+          "head_chars": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1500
+          },
+          "tail_chars": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1500
+          }
+        }
+      },
+      "hard_clear_placeholder": {
+        "type": "string",
+        "default": "[Old tool result content cleared]"
+      },
+      "detail_placeholder": {
+        "type": "string",
+        "default": "[Detailed execution context pruned to save tokens]"
+      },
+      "skip_tools_with_images": {
+        "type": "boolean",
+        "default": true
+      },
+      "compaction_threshold_hint": {
+        "type": "number",
+        "minimum": 1,
+        "description": "Optional warning-only hint: pruning_threshold should be lower than this value"
+      }
+    }
+  },
+  "uiHints": {
+    "pruning_threshold": {
+      "label": "Pruning Threshold",
+      "placeholder": "e.g., 80000",
+      "help": "Start pruning when context reaches this estimated token count"
+    },
+    "trigger_every_n_tokens": {
+      "label": "Trigger Every N Tokens",
+      "placeholder": "e.g., 5000"
+    },
+    "soft_threshold": {
+      "label": "Soft Threshold",
+      "help": "<1 for ratio (0~1), >=1 for absolute token position"
+    },
+    "hard_threshold": {
+      "label": "Hard Threshold",
+      "help": "<1 for ratio (0~1), >=1 for absolute token position"
+    },
+    "detail_threshold": {
+      "label": "Detail Threshold",
+      "help": "<1 for ratio (0~1), >=1 for absolute token position"
+    }
+  }
+}
