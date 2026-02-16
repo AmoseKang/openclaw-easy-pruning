@@ -34,11 +34,12 @@ Large real-world OpenClaw sessions often fail for practical reasons:
 Easy Pruning was created to solve this gap with a predictable, plugin-first approach:
 
 - **No core patching**: safer upgrades, lower maintenance risk
-- **Model-agnostic**: works across providers/models
-- **Rule-based and inspectable**: behavior is deterministic and easy to reason about
+- **Model-agnostic**: works across providers/models (while official implementations only works for claude)
+- **Rule-based and inspectable**: behavior is deterministic and easy to manage
 - **Safety-first retention**: preserve user/system + recent context first
 - **Operational visibility**: pruning decisions are visible in logs
-- **Context Safety**: trims oversized context in memory only before each agent run, while preserving safety-critical context and recent conversation continuity. On-disk `*.jsonl` history remains unchanged for auditability and traceability.
+- **Context Safety**: trims oversized context in memory only before each agent run, while preserving safety-critical context and recent conversation continuity
+- **Memory Safety**: on-disk `*.jsonl` history remains unchanged for auditability and traceability.
 
 In short: it helps teams keep long sessions usable, reduce context waste, and avoid avoidable model interruptions.
 
