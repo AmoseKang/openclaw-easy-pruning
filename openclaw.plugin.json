@@ -1,7 +1,7 @@
 {
   "id": "easy-pruning",
   "name": "OpenClaw Easy Pruning",
-  "version": "0.3.2",
+  "version": "0.3.6",
   "description": "Rule-based session pruning for any model: soft/hard/detail pruning before agent run, in-memory only.",
   "entry": "./dist/index.js",
   "configSchema": {
@@ -12,13 +12,13 @@
         "type": "number",
         "minimum": 1,
         "default": 80000,
-        "description": "Trigger pruning when estimated context tokens reaches this value"
+        "description": "Trigger pruning when latest llm_output usage input tokens reaches this value"
       },
       "trigger_every_n_tokens": {
         "type": "number",
         "minimum": 1,
         "default": 5000,
-        "description": "Minimum estimated token growth since last pruning trigger"
+        "description": "Minimum real input token growth since last pruning trigger (based on llm_output usage)"
       },
       "keep_recent_tokens": {
         "type": "number",
@@ -57,7 +57,11 @@
       },
       "detail_pruning_mode": {
         "type": "string",
-        "enum": ["default", "keep_last_reply", "model_summary"],
+        "enum": [
+          "default",
+          "keep_last_reply",
+          "model_summary"
+        ],
         "default": "default",
         "description": "Detail pruning strategy mode"
       },
@@ -74,8 +78,43 @@
       "detail_summary_timeout_ms": {
         "type": "number",
         "minimum": 500,
-        "default": 8000,
-        "description": "Timeout for model summary generation"
+        "default": 20000,
+        "description": "Timeout for single model summary generation"
+      },
+      "pruning_timeout_ms": {
+        "type": "number",
+        "minimum": 1000,
+        "default": 20000,
+        "description": "Timeout budget for one pruning pass; on timeout, fallback to detail mode=default"
+      },
+      "detail_batch_enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable batched model summary requests for detail pruning"
+      },
+      "detail_batch_max_items": {
+        "type": "number",
+        "minimum": 1,
+        "default": 8,
+        "description": "Maximum messages grouped into one summary API request"
+      },
+      "detail_batch_flush_ms": {
+        "type": "number",
+        "minimum": 1,
+        "default": 15,
+        "description": "Queue flush window in milliseconds for forming summary batches"
+      },
+      "detail_batch_concurrency": {
+        "type": "number",
+        "minimum": 1,
+        "default": 3,
+        "description": "Maximum parallel batch requests"
+      },
+      "detail_max_model_items_per_prune": {
+        "type": "number",
+        "minimum": 1,
+        "default": 24,
+        "description": "Maximum detail messages that are allowed to call model_summary in one pruning pass; overflow falls back to default detail pruning"
       },
       "debug_pruning_io": {
         "type": "boolean",
@@ -86,6 +125,10 @@
         "type": "boolean",
         "default": false,
         "description": "Log model-summary prompt/output previews and candidate failures"
+      },
+      "debug_log_file": {
+        "type": "string",
+        "description": "Optional path to write debug logs (e.g., \"/home/node/.openclaw/logs/easy-pruning.log\"). Only used when debug_pruning_io or debug_summary_io is true."
       },
       "debug_preview_chars": {
         "type": "number",
@@ -158,6 +201,10 @@
     "detail_pruning_mode": {
       "label": "Detail Pruning Mode",
       "help": "default | keep_last_reply | model_summary"
+    },
+    "pruning_timeout_ms": {
+      "label": "Pruning Timeout (ms)",
+      "help": "Max time for one pruning pass; timeout falls back to default detail pruning"
     },
     "debug_pruning_io": {
       "label": "Debug Pruning I/O",

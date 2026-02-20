@@ -1,5 +1,9 @@
 import { createStrategies, type StrategyDeps } from "./strategies.js";
 
+export { createStrategies };
+export type { StrategyDeps };
+export const TOKENS_PER_CHAR_ESTIMATE = 4;
+
 export type Logger = {
   debug?: (message: string) => void;
   info?: (message: string) => void;
@@ -7,7 +11,10 @@ export type Logger = {
   error?: (message: string) => void;
 };
 
-const TOKENS_PER_CHAR_ESTIMATE = 4;
+// Shared caches for llm_input/llm_output-driven trigger logic
+export const sessionModelCache = new Map<string, string>(); // sessionKey -> latest model id
+export const sessionRealInputTokensCache = new Map<string, number>(); // sessionKey -> latest usage.input_tokens
+export const sessionRealInputSourceCache = new Map<string, string>(); // sessionKey -> token source label
 
 export type DetailPruningMode = "default" | "keep_last_reply" | "model_summary";
 
@@ -39,8 +46,15 @@ export interface EasyPruningConfig {
   detail_summary_model?: string;
   detail_summary_max_chars: number;
   detail_summary_timeout_ms: number;
+  pruning_timeout_ms: number;
+  detail_batch_enabled: boolean;
+  detail_batch_max_items: number;
+  detail_batch_flush_ms: number;
+  detail_batch_concurrency: number;
+  detail_max_model_items_per_prune: number;
   debug_pruning_io: boolean;
   debug_summary_io: boolean;
+  debug_log_file?: string;
   debug_preview_chars: number;
   // optional, for warning-only check in plugin register
   compaction_threshold_hint?: number;
@@ -100,8 +114,16 @@ type MessageMeta = {
   tokenMid: number;
 };
 
-const sessionState = new Map<string, SessionTriggerState>();
+// Shared session state (cooldown tracking)
+function getSessionState(): Map<string, SessionTriggerState> {
+  if (!(globalThis as any).__easy_pruning_session_state) {
+    (globalThis as any).__easy_pruning_session_state = new Map<string, SessionTriggerState>();
+  }
+  return (globalThis as any).__easy_pruning_session_state;
+}
+const sessionState = getSessionState();
 
+export { getSessionState };
 export function normalizeConfig(
   defaults: EasyPruningConfig,
   raw: Partial<EasyPruningConfig> | undefined,
@@ -150,8 +172,32 @@ export function normalizeConfig(
   );
   cfg.detail_summary_timeout_ms = safePositiveInt(
     cfg.detail_summary_timeout_ms,
-    defaults.detail_summary_timeout_ms,
+    defaults.detail_summary_timeout_ms!,
   );
+  cfg.pruning_timeout_ms = safePositiveInt(
+    cfg.pruning_timeout_ms,
+    defaults.pruning_timeout_ms!,
+  );
+  cfg.detail_batch_enabled = Boolean(cfg.detail_batch_enabled);
+  cfg.detail_batch_max_items = safePositiveInt(
+    cfg.detail_batch_max_items,
+    defaults.detail_batch_max_items!,
+  );
+  cfg.detail_batch_flush_ms = safePositiveInt(
+    cfg.detail_batch_flush_ms,
+    defaults.detail_batch_flush_ms!,
+  );
+  cfg.detail_batch_concurrency = safePositiveInt(
+    cfg.detail_batch_concurrency,
+    defaults.detail_batch_concurrency!,
+  );
+  cfg.detail_max_model_items_per_prune = safePositiveInt(
+    cfg.detail_max_model_items_per_prune,
+    defaults.detail_max_model_items_per_prune!,
+  );
+  cfg.debug_log_file = typeof cfg.debug_log_file === "string" && cfg.debug_log_file.trim() !== ""
+    ? cfg.debug_log_file.trim()
+    : undefined;
   cfg.debug_preview_chars = safePositiveInt(cfg.debug_preview_chars, defaults.debug_preview_chars);
   cfg.debug_pruning_io = Boolean(cfg.debug_pruning_io);
   cfg.debug_summary_io = Boolean(cfg.debug_summary_io);
@@ -161,92 +207,6 @@ export function normalizeConfig(
   }
 
   return cfg;
-}
-
-export function createBeforeAgentStartHandler(
-  config: EasyPruningConfig,
-  logger: Logger,
-  deps?: StrategyDeps,
-) {
-  const strategies = createStrategies(config, {
-    logger,
-    summaryProvider: deps?.summaryProvider,
-  });
-
-  return async (
-    event: { messages?: unknown[] },
-    ctx: { sessionKey?: string; sessionId?: string },
-  ) => {
-    if (!Array.isArray(event.messages) || event.messages.length === 0) {
-      return;
-    }
-
-    const messages = event.messages;
-    const totalTokens = estimateContextTokens(messages);
-    const key = ctx.sessionKey || ctx.sessionId || "__global__";
-
-    logger.info?.(
-      `[EasyPruning][Gateway] session=${key} context=${totalTokens}t threshold=${config.pruning_threshold}t triggerEvery=${config.trigger_every_n_tokens}t`,
-    );
-
-    if (totalTokens < config.pruning_threshold) {
-      logger.debug?.(
-        `[EasyPruning][Gateway] skip: below threshold (context=${totalTokens}t < threshold=${config.pruning_threshold}t)`,
-      );
-      return;
-    }
-
-    const state = sessionState.get(key) ?? {
-      lastTriggerTokenCount: 0,
-      lastTriggeredAt: 0,
-      pruneCount: 0,
-    };
-
-    const tokensSinceLast = Math.max(0, totalTokens - state.lastTriggerTokenCount);
-    if (state.pruneCount > 0 && tokensSinceLast < config.trigger_every_n_tokens) {
-      logger.info?.(
-        `[EasyPruning][Gateway] skip: cooldown session=${key} context=${totalTokens}t grew=${tokensSinceLast}t required=${config.trigger_every_n_tokens}t`,
-      );
-      return;
-    }
-
-    const result = await applyPruningWithStats(messages, config, strategies);
-    const changed = !sameArrayShallow(messages, result.messages);
-
-    // Update trigger state whenever a pruning check is performed at threshold.
-    state.lastTriggerTokenCount = totalTokens;
-    state.lastTriggeredAt = Date.now();
-    if (changed) {
-      state.pruneCount += 1;
-    }
-    sessionState.set(key, state);
-
-    if (!changed) {
-      logger.info?.(
-        `[EasyPruning][Gateway] prune-check: no eligible messages session=${key} context=${totalTokens}t deleted=0t changed=0msg`,
-      );
-      return;
-    }
-
-    messages.length = 0;
-    messages.push(...result.messages);
-
-    const pct =
-      result.stats.contextTokensBefore > 0
-        ? ((result.stats.deletedTokens / result.stats.contextTokensBefore) * 100).toFixed(1)
-        : "0.0";
-
-    logger.info?.(
-      `[EasyPruning][Gateway] prune#${state.pruneCount} session=${key} before=${result.stats.contextTokensBefore}t after=${result.stats.contextTokensAfter}t deleted=${result.stats.deletedTokens}t (${pct}%) changed=${result.stats.changedMessages}msg ` +
-        `[soft:${result.stats.zoneChanged.soft}/-${result.stats.zoneDeletedTokens.soft}t hard:${result.stats.zoneChanged.hard}/-${result.stats.zoneDeletedTokens.hard}t detail:${result.stats.zoneChanged.detail}/-${result.stats.zoneDeletedTokens.detail}t]`,
-    );
-
-    if (config.debug_pruning_io && result.debugEntries.length > 0) {
-      logger.info?.(
-        `[EasyPruning][Debug] session=${key} prune#${state.pruneCount} entries=${JSON.stringify(result.debugEntries)}`,
-      );
-    }
-  };
 }
 
 export async function applyPruning(
@@ -328,6 +288,14 @@ export async function applyPruningWithStats(
 
   const debugEntries: PruningDebugEntry[] = [];
 
+  // Limit model-summary calls per pruning pass. Overflow items fall back to default detail pruning.
+  const modelSummaryLimit = Math.max(0, Math.floor(config.detail_max_model_items_per_prune ?? 0));
+  const fallbackDetailStrategies =
+    config.detail_pruning_mode === "model_summary"
+      ? createStrategies({ ...config, detail_pruning_mode: "default" })
+      : null;
+  let modelSummaryUsed = 0;
+
   for (const meta of metas) {
     if (protectedIndices.has(meta.index)) {
       continue;
@@ -343,7 +311,28 @@ export async function applyPruningWithStats(
     }
 
     const original = meta.message;
-    const next = await strategies[zone].apply(original, { config, zone });
+
+    const next = await (async () => {
+      if (zone !== "detail") {
+        return await strategies[zone].apply(original, { config, zone });
+      }
+
+      if (config.detail_pruning_mode !== "model_summary") {
+        return await strategies.detail.apply(original, { config, zone });
+      }
+
+      if (modelSummaryUsed < modelSummaryLimit) {
+        modelSummaryUsed += 1;
+        return await strategies.detail.apply(original, { config, zone });
+      }
+
+      // overflow: fallback to default detail pruning (no model summary)
+      if (fallbackDetailStrategies) {
+        return await fallbackDetailStrategies.detail.apply(original, { config, zone });
+      }
+
+      return await strategies.detail.apply(original, { config, zone });
+    })();
 
     if (next !== original) {
       out[meta.index] = next;
@@ -496,6 +485,13 @@ function safePositiveInt(value: number, fallback: number): number {
   return Math.floor(value);
 }
 
+function safePositiveNumber(value: number, fallback: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+  return value;
+}
+
 function safeNonNegativeNumber(value: number, fallback: number): number {
   if (!Number.isFinite(value) || value < 0) {
     return fallback;
@@ -546,3 +542,10 @@ function previewMessageContent(content: unknown, maxChars: number): string {
   }
   return `${compact.slice(0, maxChars - 3)}...`;
 }
+
+export { estimateContextTokens, sameArrayShallow };
+export {
+  createBeforeAgentStartHandler,
+  createLlmInputHandler,
+  createLlmOutputHandler,
+} from "./handlers/index.js";

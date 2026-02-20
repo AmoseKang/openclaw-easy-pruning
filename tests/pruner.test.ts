@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyPruning,
   applyPruningWithStats,
+  createBeforeAgentStartHandler,
+  createLlmOutputHandler,
   normalizeConfig,
   type EasyPruningConfig,
 } from "../src/pruner.js";
@@ -31,7 +33,13 @@ const defaults: EasyPruningConfig = {
   detail_pruning_mode: "default",
   detail_summary_model: undefined,
   detail_summary_max_chars: 120,
-  detail_summary_timeout_ms: 3000,
+  detail_summary_timeout_ms: 20000,
+  pruning_timeout_ms: 20000,
+  detail_batch_enabled: true,
+  detail_batch_max_items: 8,
+  detail_batch_flush_ms: 10,
+  detail_batch_concurrency: 2,
+  detail_max_model_items_per_prune: 24,
   debug_pruning_io: false,
   debug_summary_io: false,
   debug_preview_chars: 120,
@@ -53,6 +61,7 @@ describe("normalizeConfig", () => {
     });
     expect(cfg.detail_pruning_mode).toBe("default");
   });
+
 });
 
 describe("strategy functions", () => {
@@ -143,6 +152,57 @@ describe("strategy functions", () => {
     expect(serialized).toContain("Model summary (assistant)");
     expect(serialized).toContain("summarized assistant context");
   });
+
+  it("detail pruning model_summary keeps toolCall-only assistant messages linkable", async () => {
+    const cfg = { ...defaults, detail_pruning_mode: "model_summary" as const };
+    const msg = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call_only", name: "read", arguments: { path: "/tmp/a" } }],
+    };
+
+    const out = await applyDetailPruning(msg, cfg, {
+      summaryProvider: async () => "",
+    });
+
+    const serialized = JSON.stringify(out.content);
+    expect(serialized).toContain("call_only");
+    expect(serialized).toContain("type\":\"toolCall\"");
+  });
+
+  it("detail pruning model_summary skips already summarized content", async () => {
+    const cfg = { ...defaults, detail_pruning_mode: "model_summary" as const };
+    const msg = {
+      role: "tool_result",
+      content: "[Model summary (toolResult)]\n\nAlready summarized",
+    };
+
+    const out = await applyDetailPruning(msg, cfg, {
+      summaryProvider: async () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    expect(out).toBe(msg);
+  });
+
+  it("detail pruning preserves function_call style linkage fields", async () => {
+    const cfg = { ...defaults, detail_pruning_mode: "model_summary" as const };
+    const msg = {
+      role: "assistant",
+      content: [
+        { type: "function_call", call_id: "call_cf876", functionName: "read", input: { path: "/tmp/x" } },
+      ],
+    };
+
+    const out = await applyDetailPruning(msg, cfg, {
+      summaryProvider: async () => "",
+    });
+
+    const serialized = JSON.stringify(out.content);
+    expect(serialized).toContain("function_call");
+    expect(serialized).toContain("call_cf876");
+    expect(serialized).toContain("call_id");
+  });
 });
 
 describe("applyPruning", () => {
@@ -221,6 +281,37 @@ describe("applyPruning", () => {
     expect(String(out[0].content)).toContain("summary by model");
   });
 
+  it("limits model-summary items per prune and falls back for overflow", async () => {
+    const cfg: EasyPruningConfig = {
+      ...defaults,
+      detail_pruning_mode: "model_summary",
+      keep_recent_tokens: 0,
+      keep_recent_messages: 0,
+      soft_threshold: 0,
+      hard_threshold: 0,
+      detail_threshold: 0,
+      detail_max_model_items_per_prune: 1,
+    };
+
+    let calls = 0;
+    const strategies = createStrategies(cfg, {
+      summaryProvider: async () => {
+        calls += 1;
+        return "batched summary";
+      },
+    });
+
+    const messages = [
+      { role: "tool_result", content: "Tool output A\n\nFinal Answer: A done" },
+      { role: "tool_result", content: "Tool output B\n\nFinal Answer: B done" },
+    ];
+
+    const out = (await applyPruning(messages, cfg, strategies)) as Array<{ content: string }>;
+    expect(calls).toBe(1);
+    expect(out.some((m) => String(m.content).includes("Model summary"))).toBe(true);
+    expect(out.some((m) => String(m.content).includes("[Process details pruned]"))).toBe(true);
+  });
+
   it("returns debug entries when debug_pruning_io is enabled", async () => {
     const cfg: EasyPruningConfig = {
       ...defaults,
@@ -244,5 +335,112 @@ describe("applyPruning", () => {
     expect(result.debugEntries.length).toBeGreaterThan(0);
     expect(result.debugEntries[0].zone).toBe("detail");
     expect(result.debugEntries[0].deletedTokens).toBeGreaterThan(0);
+  });
+
+  it("rebases cooldown baseline when real usage shrinks", async () => {
+    const cfg: EasyPruningConfig = {
+      ...defaults,
+      pruning_threshold: 10,
+      trigger_every_n_tokens: 50,
+      keep_recent_tokens: 0,
+      keep_recent_messages: 0,
+      soft_threshold: 0,
+      hard_threshold: 0,
+      detail_threshold: 0,
+    };
+
+    const logs: string[] = [];
+    const logger = {
+      info: (m: string) => logs.push(m),
+      warn: (m: string) => logs.push(m),
+      debug: (m: string) => logs.push(m),
+      error: (m: string) => logs.push(m),
+    };
+
+    const beforeHandler = createBeforeAgentStartHandler(cfg, logger);
+    const outputHandler = createLlmOutputHandler(cfg, logger);
+    const sessionKey = `test:cooldown-rebase:${Date.now()}`;
+
+    outputHandler({ model: "test-model", usage: { input_tokens: 1000 } }, { sessionKey });
+    const large = [{ role: "tool_result", content: "A".repeat(1200) }];
+    await beforeHandler({ messages: large }, { sessionKey });
+
+    logs.length = 0;
+    outputHandler({ model: "test-model", usage: { input_tokens: 200 } }, { sessionKey });
+    const smaller = [{ role: "tool_result", content: "B".repeat(300) }];
+    await beforeHandler({ messages: smaller }, { sessionKey });
+
+    expect(logs.some((l) => l.includes("cooldown baseline rebased"))).toBe(true);
+    expect(logs.some((l) => l.includes("reason=cooldown"))).toBe(false);
+  });
+
+  it("falls back to default detail pruning when pruning exceeds pruning_timeout_ms", async () => {
+    const cfg: EasyPruningConfig = {
+      ...defaults,
+      pruning_threshold: 10,
+      trigger_every_n_tokens: 1,
+      keep_recent_tokens: 0,
+      keep_recent_messages: 0,
+      soft_threshold: 0,
+      hard_threshold: 0,
+      detail_threshold: 0,
+      detail_pruning_mode: "model_summary",
+      pruning_timeout_ms: 5,
+      detail_summary_timeout_ms: 1000,
+    };
+
+    const logs: string[] = [];
+    const logger = {
+      info: (m: string) => logs.push(m),
+      warn: (m: string) => logs.push(m),
+      debug: (m: string) => logs.push(m),
+      error: (m: string) => logs.push(m),
+    };
+
+    const beforeHandler = createBeforeAgentStartHandler(cfg, logger, {
+      summaryProvider: async () => new Promise<string>((resolve) => setTimeout(() => resolve("late"), 200)),
+    });
+    const outputHandler = createLlmOutputHandler(cfg, logger);
+    const sessionKey = `test:timeout-fallback:${Date.now()}`;
+
+    outputHandler({ model: "test-model", usage: { input_tokens: 1200 } }, { sessionKey });
+    const messages = [{ role: "tool_result", content: "X".repeat(1200) }];
+    await beforeHandler({ messages }, { sessionKey });
+
+    expect(logs.some((l) => l.includes("pruning timeout") && l.includes("fallback detail_pruning_mode=default"))).toBe(true);
+    expect(String((messages[0] as { content: unknown }).content)).toContain("[Process details pruned]");
+  });
+
+  it("uses llm_output real_input_tokens for threshold check and logging", async () => {
+    const cfg: EasyPruningConfig = {
+      ...defaults,
+      pruning_threshold: 300,
+      trigger_every_n_tokens: 1,
+      keep_recent_tokens: 0,
+      keep_recent_messages: 0,
+      soft_threshold: 0,
+      hard_threshold: 0,
+      detail_threshold: 0,
+    };
+
+    const logs: string[] = [];
+    const logger = {
+      info: (m: string) => logs.push(m),
+      warn: (m: string) => logs.push(m),
+      debug: (m: string) => logs.push(m),
+      error: (m: string) => logs.push(m),
+    };
+
+    const beforeHandler = createBeforeAgentStartHandler(cfg, logger);
+    const outputHandler = createLlmOutputHandler(cfg, logger);
+    const sessionKey = `test:usage-threshold:${Date.now()}`;
+
+    outputHandler({ model: "test-model", usage: { input_tokens: 420 } }, { sessionKey });
+    const messages = [{ role: "tool_result", content: "X".repeat(300) }];
+    await beforeHandler({ messages }, { sessionKey });
+
+    expect(logs.some((l) => l.includes("usage_update") && l.includes("real_input_tokens=420"))).toBe(true);
+    expect(logs.some((l) => l.includes("real_input_tokens=420") && l.includes("threshold=300"))).toBe(true);
+    expect(logs.some((l) => l.includes("reason=below_threshold"))).toBe(false);
   });
 });
