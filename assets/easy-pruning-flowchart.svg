@@ -7,8 +7,8 @@
     </linearGradient>
 
     <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#111c33"/>
-      <stop offset="100%" stop-color="#0d162b"/>
+      <stop offset="0%" stop-color="#121f3a"/>
+      <stop offset="100%" stop-color="#0c1427"/>
     </linearGradient>
 
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
@@ -18,12 +18,12 @@
     </linearGradient>
 
     <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.55"/>
     </filter>
 
     <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="10" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.6 0" result="glow"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.55 0" result="glow"/>
       <feMerge>
         <feMergeNode in="glow"/>
         <feMergeNode in="SourceGraphic"/>
@@ -35,30 +35,25 @@
     </marker>
 
     <style>
-      .title { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 800; }
-      .subtitle { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 500; opacity: 0.9; }
+      .title { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 800; letter-spacing: -0.2px; }
+      .subtitle { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 500; opacity: 0.92; }
       .h { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 700; }
       .t { font-family: "DejaVu Sans", Arial, sans-serif; font-weight: 500; }
-      .mono { font-family: "DejaVu Sans Mono", monospace; }
+      .mono { font-family: "DejaVu Sans Mono", ui-monospace, monospace; }
 
       .panel { fill: url(#card); stroke: rgba(148, 163, 184, 0.22); stroke-width: 1.2; filter: url(#shadow); }
+      .box { fill: rgba(15, 23, 42, 0.52); stroke: rgba(148, 163, 184, 0.22); stroke-width: 1.1; }
+      .boxStrong { fill: rgba(2, 6, 23, 0.32); stroke: rgba(148, 163, 184, 0.26); stroke-width: 1.1; }
       .chip { fill: rgba(124, 58, 237, 0.14); stroke: rgba(124, 58, 237, 0.55); stroke-width: 1; }
       .chip2 { fill: rgba(6, 182, 212, 0.12); stroke: rgba(6, 182, 212, 0.55); stroke-width: 1; }
 
-      .box { fill: rgba(15, 23, 42, 0.55); stroke: rgba(148, 163, 184, 0.22); stroke-width: 1.1; }
-      .boxStrong { fill: rgba(2, 6, 23, 0.35); stroke: rgba(148, 163, 184, 0.28); stroke-width: 1.1; }
-
       .accentStroke { stroke: url(#accent); stroke-width: 3; }
       .line { stroke: rgba(154, 166, 195, 0.75); stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
-      .dash { stroke-dasharray: 7 8; }
 
-      .small { font-size: 18px; fill: rgba(226,232,240,0.86); }
-      .text { font-size: 20px; fill: rgba(226,232,240,0.92); }
-      .muted { fill: rgba(148,163,184,0.95); }
+      .small { font-size: 16px; fill: rgba(226,232,240,0.87); }
+      .text { font-size: 18px; fill: rgba(226,232,240,0.92); }
       .dim { fill: rgba(148,163,184,0.78); }
-
-      .tag { font-size: 16px; fill: rgba(226,232,240,0.9); }
-      .tag2 { font-size: 16px; fill: rgba(226,232,240,0.88); }
+      .tag { font-size: 15px; fill: rgba(226,232,240,0.9); }
 
       .k { fill: rgba(6, 182, 212, 0.95); }
       .p { fill: rgba(167, 139, 250, 0.95); }
@@ -71,92 +66,105 @@
   <rect x="0" y="0" width="1600" height="900" fill="url(#bg)"/>
 
   <!-- Glow accent -->
-  <circle cx="1320" cy="130" r="180" fill="url(#accent)" opacity="0.22" filter="url(#softGlow)"/>
-  <circle cx="250" cy="780" r="220" fill="url(#accent)" opacity="0.14" filter="url(#softGlow)"/>
+  <circle cx="1320" cy="135" r="180" fill="url(#accent)" opacity="0.20" filter="url(#softGlow)"/>
+  <circle cx="260" cy="785" r="230" fill="url(#accent)" opacity="0.12" filter="url(#softGlow)"/>
 
   <!-- Header -->
   <text x="80" y="92" class="title" font-size="44" fill="rgba(226,232,240,0.96)">Easy Pruning · Flow</text>
   <text x="80" y="128" class="subtitle" font-size="20" fill="rgba(148,163,184,0.92)">Rule-based context pruning for long OpenClaw sessions (in-memory only)</text>
 
-  <!-- Left panel: Runtime hooks & trigger gating -->
+  <!-- Left panel -->
   <rect x="70" y="165" rx="22" ry="22" width="680" height="670" class="panel"/>
-  <text x="105" y="215" class="h" font-size="24" fill="rgba(226,232,240,0.95)">A. Runtime hooks → real-token trigger gating</text>
+  <text x="105" y="215" class="h" font-size="24" fill="rgba(226,232,240,0.95)">A. Runtime hooks → trigger gating</text>
 
   <!-- Chips -->
-  <rect x="105" y="236" rx="14" ry="14" width="170" height="34" class="chip"/>
-  <text x="122" y="259" class="t tag" >before_agent_start</text>
+  <rect x="105" y="236" rx="14" ry="14" width="176" height="34" class="chip"/>
+  <text x="121" y="259" class="t tag">before_agent_start</text>
 
-  <rect x="285" y="236" rx="14" ry="14" width="120" height="34" class="chip2"/>
-  <text x="303" y="259" class="t tag2" >llm_input</text>
+  <rect x="289" y="236" rx="14" ry="14" width="120" height="34" class="chip2"/>
+  <text x="307" y="259" class="t tag">llm_input</text>
 
-  <rect x="415" y="236" rx="14" ry="14" width="140" height="34" class="chip2"/>
-  <text x="433" y="259" class="t tag2" >llm_output</text>
+  <rect x="418" y="236" rx="14" ry="14" width="134" height="34" class="chip2"/>
+  <text x="435" y="259" class="t tag">llm_output</text>
 
   <!-- Hook boxes -->
-  <rect x="105" y="295" rx="18" ry="18" width="610" height="118" class="box"/>
-  <text x="130" y="332" class="h text">llm_input</text>
-  <text x="130" y="363" class="t small dim">Cache latest model id per session</text>
-  <text x="130" y="392" class="t small"><tspan class="mono k">sessionModelCache</tspan> ← event.model</text>
+  <rect x="105" y="295" rx="18" ry="18" width="610" height="112" class="box"/>
+  <text x="130" y="330" class="h text">llm_input</text>
+  <text x="130" y="358" class="t small dim">Cache latest model id per session</text>
+  <text x="130" y="385" class="t small"><tspan class="mono k">sessionModelCache</tspan> ← event.model</text>
 
-  <rect x="105" y="430" rx="18" ry="18" width="610" height="145" class="box"/>
-  <text x="130" y="468" class="h text">llm_output</text>
-  <text x="130" y="499" class="t small dim">Source of truth: real input tokens from usage</text>
-  <text x="130" y="528" class="t small"><tspan class="mono k">sessionRealInputTokensCache</tspan> ← usage.input_tokens (or compatible fields)</text>
-  <text x="130" y="556" class="t small dim">Guards: drop outliers, record token source label</text>
+  <rect x="105" y="420" rx="18" ry="18" width="610" height="142" class="box"/>
+  <text x="130" y="455" class="h text">llm_output</text>
+  <text x="130" y="483" class="t small dim">Prefer real usage tokens when available</text>
+  <text x="130" y="510" class="t small"><tspan class="mono k">sessionRealInputTokensCache</tspan> ← usage.input_tokens (or compatible)</text>
+  <text x="130" y="537" class="t small dim">If missing, fallback to deterministic estimate from messages</text>
 
   <!-- Decision / gating -->
-  <rect x="105" y="594" rx="18" ry="18" width="610" height="210" class="boxStrong"/>
-  <text x="130" y="632" class="h text">before_agent_start (trigger gating)</text>
+  <rect x="105" y="582" rx="18" ry="18" width="610" height="222" class="boxStrong"/>
+  <text x="130" y="617" class="h text">before_agent_start (gate + cooldown)</text>
 
-  <text x="130" y="666" class="t small">1) If no cached usage → <tspan class="y">skip</tspan></text>
-  <text x="130" y="695" class="t small">2) If <tspan class="mono">real_input_tokens</tspan> &lt; <tspan class="mono">pruning_threshold</tspan> → <tspan class="y">skip</tspan></text>
-  <text x="130" y="724" class="t small">3) If growth &lt; <tspan class="mono">trigger_every_n_tokens</tspan> (cooldown) → <tspan class="y">skip</tspan></text>
-  <text x="130" y="753" class="t small">4) Else → run pruning pipeline (soft → hard → detail)</text>
+  <text x="130" y="650" class="t small">1) tokens = <tspan class="mono">usage.input_tokens</tspan> else <tspan class="mono">estimateContextTokens</tspan></text>
+  <text x="130" y="678" class="t small">2) If tokens &lt; <tspan class="mono">pruning_threshold</tspan> → <tspan class="y">skip</tspan></text>
+  <text x="130" y="706" class="t small">3) If growth &lt; <tspan class="mono">trigger_every_n_tokens</tspan> → <tspan class="y">skip</tspan></text>
+  <text x="130" y="734" class="t small">4) Else → run pipeline (soft → hard → detail)</text>
+  <text x="130" y="762" class="t small dim">Logs: mode=real/estimate, skip reasons, prune stats</text>
 
-  <!-- Connector from before_agent_start to right panel -->
-  <path d="M 750 700 C 860 700, 880 700, 900 700" class="line"/>
+  <!-- Connector to right panel -->
+  <path d="M 750 700 C 865 700, 885 700, 900 700" class="line"/>
 
-  <!-- Right panel: Pruning pipeline -->
+  <!-- Right panel -->
   <rect x="850" y="165" rx="22" ry="22" width="680" height="670" class="panel"/>
-  <text x="885" y="215" class="h" font-size="24" fill="rgba(226,232,240,0.95)">B. Pruning pipeline (soft → hard → detail)</text>
+  <text x="885" y="215" class="h" font-size="24" fill="rgba(226,232,240,0.95)">B. Pruning pipeline</text>
 
-  <!-- Pipeline steps -->
-  <rect x="885" y="255" rx="18" ry="18" width="610" height="110" class="box"/>
-  <text x="910" y="292" class="h text">Build message metas</text>
-  <text x="910" y="323" class="t small dim">Estimate per-message token ranges; mark zones by thresholds</text>
-  <text x="910" y="351" class="t small">Apply retention: keep <tspan class="p">system</tspan>/<tspan class="g">user</tspan> + keep_recent_tokens/messages</text>
+  <!-- Layout: left column boxes + right column callouts (no overlap) -->
+  <!-- left column width: 430, right column width: 150 -->
+  <!-- Column guide: left=885..1315, right=1330..1495 -->
 
-  <path d="M 1190 365 L 1190 395" class="line"/>
+  <!-- Callouts (right column) -->
+  <rect x="1330" y="255" rx="16" ry="16" width="165" height="104" fill="rgba(124,58,237,0.10)" stroke="rgba(124,58,237,0.55)" stroke-width="1.1"/>
+  <text x="1348" y="286" class="h" font-size="16" fill="rgba(226,232,240,0.93)">model_summary</text>
+  <text x="1348" y="311" class="t" font-size="14" fill="rgba(148,163,184,0.92)">runtime API</text>
+  <text x="1348" y="332" class="t" font-size="14" fill="rgba(148,163,184,0.92)">→ OpenRouter</text>
+  <text x="1348" y="353" class="t" font-size="14" fill="rgba(148,163,184,0.92)">→ OpenAI</text>
 
-  <rect x="885" y="405" rx="18" ry="18" width="610" height="110" class="box"/>
-  <text x="910" y="442" class="h text">Soft</text>
-  <text x="910" y="473" class="t small dim">Truncate very long tool outputs (keep head/tail)</text>
-  <text x="910" y="501" class="t small">Goal: quick wins, minimal semantic loss</text>
+  <rect x="1330" y="380" rx="16" ry="16" width="165" height="110" fill="rgba(6,182,212,0.08)" stroke="rgba(6,182,212,0.55)" stroke-width="1.1"/>
+  <text x="1348" y="410" class="h" font-size="16" fill="rgba(226,232,240,0.93)">Safety</text>
+  <text x="1348" y="435" class="t" font-size="14" fill="rgba(148,163,184,0.92)">Keep system</text>
+  <text x="1348" y="456" class="t" font-size="14" fill="rgba(148,163,184,0.92)">Keep user</text>
+  <text x="1348" y="477" class="t" font-size="14" fill="rgba(148,163,184,0.92)">Keep recent</text>
 
-  <path d="M 1190 515 L 1190 545" class="line"/>
+  <!-- Pipeline boxes (left column) -->
+  <rect x="885" y="255" rx="18" ry="18" width="430" height="112" class="box"/>
+  <text x="910" y="290" class="h text">Build message metas</text>
+  <text x="910" y="318" class="t small dim">Estimate token ranges; resolve zones by thresholds</text>
+  <text x="910" y="346" class="t small">Retention: <tspan class="p">system</tspan>/<tspan class="g">user</tspan> + keep_recent_tokens/messages</text>
 
-  <rect x="885" y="555" rx="18" ry="18" width="610" height="110" class="box"/>
-  <text x="910" y="592" class="h text">Hard</text>
-  <text x="910" y="623" class="t small dim">Replace old tool results with placeholders</text>
-  <text x="910" y="651" class="t small">Goal: aggressively reclaim tokens from stale execution logs</text>
+  <path d="M 1100 367 L 1100 395" class="line"/>
 
-  <path d="M 1190 665 L 1190 695" class="line"/>
+  <rect x="885" y="405" rx="18" ry="18" width="430" height="112" class="box"/>
+  <text x="910" y="440" class="h text">Soft</text>
+  <text x="910" y="468" class="t small dim">Trim oversized tool outputs (head/tail)</text>
+  <text x="910" y="496" class="t small">Minimize semantic loss; quick token wins</text>
+
+  <path d="M 1100 517 L 1100 545" class="line"/>
+
+  <rect x="885" y="555" rx="18" ry="18" width="430" height="112" class="box"/>
+  <text x="910" y="590" class="h text">Hard</text>
+  <text x="910" y="618" class="t small dim">Clear old tool results → placeholder</text>
+  <text x="910" y="646" class="t small">Reclaim stale execution logs aggressively</text>
+
+  <path d="M 1100 667 L 1100 695" class="line"/>
 
   <rect x="885" y="705" rx="18" ry="18" width="610" height="130" class="boxStrong"/>
-  <text x="910" y="742" class="h text">Detail</text>
-  <text x="910" y="773" class="t small dim">Compact process-heavy internals while preserving outcomes</text>
-  <text x="910" y="801" class="t small">Modes: <tspan class="mono">default</tspan> · <tspan class="mono">keep_last_reply</tspan> · <tspan class="mono">model_summary</tspan></text>
-  <text x="910" y="829" class="t small dim">Safety: preserve assistant toolCall skeleton (call_id) to keep tool linkage</text>
-
-  <!-- Side callout: model_summary -->
-  <rect x="1040" y="264" rx="16" ry="16" width="440" height="88" fill="rgba(124,58,237,0.10)" stroke="rgba(124,58,237,0.55)" stroke-width="1.1"/>
-  <text x="1062" y="296" class="h" font-size="18" fill="rgba(226,232,240,0.93)">model_summary provider (best-effort)</text>
-  <text x="1062" y="322" class="t" font-size="16" fill="rgba(148,163,184,0.92)">runtime API → OpenRouter → OpenAI (fallback)</text>
+  <text x="910" y="740" class="h text">Detail</text>
+  <text x="910" y="768" class="t small dim">Compact process-heavy internals; keep outcomes</text>
+  <text x="910" y="796" class="t small">Modes: <tspan class="mono">default</tspan> · <tspan class="mono">keep_last_reply</tspan> · <tspan class="mono">model_summary</tspan></text>
+  <text x="910" y="823" class="t small dim">Tool-call safety: preserve toolCall skeleton (call_id)</text>
 
   <!-- Footer legend -->
-  <rect x="70" y="840" rx="16" ry="16" width="1460" height="45" fill="rgba(2,6,23,0.35)" stroke="rgba(148,163,184,0.22)"/>
+  <rect x="70" y="840" rx="16" ry="16" width="1460" height="45" fill="rgba(2,6,23,0.32)" stroke="rgba(148,163,184,0.22)"/>
   <text x="95" y="868" class="t" font-size="18" fill="rgba(148,163,184,0.92)">
-    Output: messages are pruned in-memory, then forwarded into the agent run. Logs include skip reasons + prune stats.
+    Output: pruned in-memory then forwarded to the agent run. Works across models (real usage tokens when available; estimate fallback otherwise).
   </text>
 
   <!-- Decorative accent line -->
