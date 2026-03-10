@@ -57,11 +57,37 @@ function isAssistantRole(role: string): boolean {
   return role === "assistant";
 }
 
+function normalizeBlockType(value: unknown): string {
+  return String(value ?? "").replace(/[-_\s]/g, "").toLowerCase();
+}
+
+function isToolCallType(type: unknown): boolean {
+  const normalized = normalizeBlockType(type);
+  return normalized === "toolcall" || normalized === "functioncall";
+}
+
+function extractToolCallId(block: Record<string, unknown>): string | null {
+  const keys = ["id", "call_id", "callId", "toolCallId", "function_call_id"];
+  for (const key of keys) {
+    const value = block[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
 function isToolCallBlock(block: unknown): block is Record<string, unknown> {
   if (!block || typeof block !== "object") {
     return false;
   }
-  return String((block as Record<string, unknown>).type ?? "") === "toolCall";
+
+  const obj = block as Record<string, unknown>;
+  if (!isToolCallType(obj.type)) {
+    return false;
+  }
+
+  return extractToolCallId(obj) !== null;
 }
 
 function hasToolCallBlocks(content: unknown): boolean {
@@ -138,19 +164,41 @@ function compactToolCallBlock(
   block: Record<string, unknown>,
   config: EasyPruningConfig,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    type: "toolCall",
-  };
+  const out: Record<string, unknown> = {};
 
-  if (typeof block.id === "string") {
-    out.id = block.id;
+  // Preserve original type spelling for runtime compatibility.
+  const typeValue = typeof block.type === "string" ? block.type : "toolCall";
+  out.type = typeValue;
+
+  // Keep id/name fields in both common spellings.
+  const id = extractToolCallId(block);
+  if (id) {
+    if (typeof block.id === "string") out.id = id;
+    if (typeof block.call_id === "string") out.call_id = id;
+    if (typeof block.callId === "string") out.callId = id;
+    if (typeof block.toolCallId === "string") out.toolCallId = id;
+    if (typeof block.function_call_id === "string") out.function_call_id = id;
+
+    // Ensure at least one canonical key exists.
+    if (!("id" in out) && !("call_id" in out) && !("callId" in out)) {
+      out.id = id;
+    }
   }
-  if (typeof block.name === "string") {
-    out.name = block.name;
-  }
+
+  if (typeof block.name === "string") out.name = block.name;
+  if (typeof block.functionName === "string") out.functionName = block.functionName;
 
   if (block.arguments !== undefined) {
     out.arguments = compactUnknown(block.arguments, {
+      depth: 3,
+      maxArray: 16,
+      maxObjectKeys: 24,
+      maxStringChars: Math.max(120, Math.floor(config.debug_preview_chars * 2)),
+    });
+  }
+
+  if (block.input !== undefined) {
+    out.input = compactUnknown(block.input, {
       depth: 3,
       maxArray: 16,
       maxObjectKeys: 24,
@@ -186,7 +234,7 @@ function extractAssistantBlocks(content: unknown): {
     const obj = block as Record<string, unknown>;
     const type = String(obj.type ?? "");
 
-    if (type === "toolCall") {
+    if (isToolCallType(type) && extractToolCallId(obj)) {
       toolCalls.push(obj);
       continue;
     }
@@ -267,6 +315,22 @@ function hasImageContent(content: unknown): boolean {
   }
 
   return false;
+}
+
+function isAlreadyPrunedText(text: string): boolean {
+  const v = text.trim();
+  if (!v) return false;
+  return (
+    v.includes("[Model summary (") ||
+    v.includes("[Process details pruned]") ||
+    v.includes("[Old tool result content cleared]") ||
+    v.includes("[Detailed execution context pruned to save tokens]")
+  );
+}
+
+function isAlreadyPrunedContent(content: unknown): boolean {
+  const unified = toUnifiedText(content);
+  return isAlreadyPrunedText(unified);
 }
 
 function toUnifiedText(content: unknown): string {
@@ -468,6 +532,10 @@ function applyDetailDefault(message: MessageLike, config: EasyPruningConfig): Me
     return message;
   }
 
+  if (isAlreadyPrunedContent(message.content)) {
+    return message;
+  }
+
   if (isAssistantRole(role)) {
     const content = message.content;
 
@@ -543,6 +611,10 @@ function applyDetailKeepLastReply(message: MessageLike, config: EasyPruningConfi
     return message;
   }
 
+  if (isAlreadyPrunedContent(message.content)) {
+    return message;
+  }
+
   if (isAssistantRole(role)) {
     if (hasToolCallBlocks(message.content)) {
       return {
@@ -591,12 +663,26 @@ async function applyDetailModelSummary(
     return message;
   }
 
+  if (isAlreadyPrunedContent(message.content)) {
+    return message;
+  }
+
   if (isToolResultRole(role) && config.skip_tools_with_images && hasImageContent(message.content)) {
     return message;
   }
 
+  // Critical safety: assistant toolCall blocks must remain linkable by call_id,
+  // even when there is no text payload to summarize.
+  const assistantHasToolCalls = isAssistantRole(role) && hasToolCallBlocks(message.content);
+
   const raw = toUnifiedText(message.content);
   if (!raw.trim()) {
+    if (assistantHasToolCalls) {
+      return {
+        ...message,
+        content: buildAssistantContentWithToolCalls(message.content, config, "model_summary", ""),
+      };
+    }
     return {
       ...message,
       content: preserveContentShape(message.content, config.detail_placeholder),
@@ -618,8 +704,7 @@ async function applyDetailModelSummary(
     summary = heuristicSummary(raw, config.detail_summary_max_chars);
   }
 
-  // Critical safety: assistant toolCall blocks must remain linkable by call_id.
-  if (isAssistantRole(role) && hasToolCallBlocks(message.content)) {
+  if (assistantHasToolCalls) {
     return {
       ...message,
       content: buildAssistantContentWithToolCalls(message.content, config, "model_summary", summary),
