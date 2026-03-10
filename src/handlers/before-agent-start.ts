@@ -2,6 +2,7 @@ import type { EasyPruningConfig, Logger, StrategyDeps } from "../pruner.js";
 import {
   createStrategies,
   applyPruningWithStats,
+  estimateContextTokens,
   getSessionState,
   sameArrayShallow,
   sessionModelCache,
@@ -44,23 +45,38 @@ export function createBeforeAgentStartHandler(
     const key = ctx.sessionKey || ctx.sessionId || "__global__";
 
     const realInputTokens = sessionRealInputTokensCache.get(key);
-    const tokenSource = sessionRealInputSourceCache.get(key) ?? "unknown";
+    const usageSource = sessionRealInputSourceCache.get(key) ?? "unknown";
     const model = sessionModelCache.get(key) ?? "(unknown)";
 
-    if (!realInputTokens || realInputTokens <= 0) {
+    // Prefer real usage tokens; fall back to deterministic estimation so pruning can work
+    // on providers/models that don't emit usage.input_tokens.
+    let inputTokens = realInputTokens ?? 0;
+    let tokenSource = usageSource;
+    let triggerMode: "real" | "estimate" = "real";
+
+    if (!inputTokens || inputTokens <= 0) {
+      inputTokens = estimateContextTokens(messages);
+      tokenSource = "estimate.context";
+      triggerMode = "estimate";
       logger.info?.(
-        `[EasyPruning][Gateway] skip session=${key} model=${model} reason=no_usage_tokens threshold=${config.pruning_threshold}t`,
+        `[EasyPruning][Gateway] usage missing; fallback to estimate session=${key} model=${model} est_input_tokens=${inputTokens}t threshold=${config.pruning_threshold}t`,
+      );
+    }
+
+    if (!inputTokens || inputTokens <= 0) {
+      logger.info?.(
+        `[EasyPruning][Gateway] skip session=${key} model=${model} reason=no_tokens threshold=${config.pruning_threshold}t`,
       );
       return;
     }
 
     logger.info?.(
-      `[EasyPruning][Gateway] session=${key} model=${model} real_input_tokens=${realInputTokens} source=${tokenSource} threshold=${config.pruning_threshold}t triggerEvery=${config.trigger_every_n_tokens}t`,
+      `[EasyPruning][Gateway] session=${key} model=${model} input_tokens=${inputTokens}t mode=${triggerMode} source=${tokenSource} threshold=${config.pruning_threshold}t triggerEvery=${config.trigger_every_n_tokens}t`,
     );
 
-    if (realInputTokens < config.pruning_threshold) {
+    if (inputTokens < config.pruning_threshold) {
       logger.info?.(
-        `[EasyPruning][Gateway] skip session=${key} reason=below_threshold real_input_tokens=${realInputTokens}t threshold=${config.pruning_threshold}t`,
+        `[EasyPruning][Gateway] skip session=${key} reason=below_threshold input_tokens=${inputTokens}t threshold=${config.pruning_threshold}t mode=${triggerMode}`,
       );
       return;
     }
@@ -71,18 +87,27 @@ export function createBeforeAgentStartHandler(
       pruneCount: 0,
     };
 
-    if (state.lastTriggerTokenCount > realInputTokens) {
+    if (state.lastTriggerSource && state.lastTriggerSource !== triggerMode) {
       logger.info?.(
-        `[EasyPruning][Gateway] cooldown baseline rebased session=${key} from=${state.lastTriggerTokenCount}t to=${realInputTokens}t`,
+        `[EasyPruning][Gateway] cooldown baseline source changed; rebasing session=${key} from=${state.lastTriggerSource} to=${triggerMode} baseline=${inputTokens}t`,
       );
-      state.lastTriggerTokenCount = realInputTokens;
+      state.lastTriggerTokenCount = inputTokens;
+      state.lastTriggerSource = triggerMode;
       state.pruneCount = 0;
     }
 
-    const tokensSinceLast = Math.max(0, realInputTokens - state.lastTriggerTokenCount);
+    if (state.lastTriggerTokenCount > inputTokens) {
+      logger.info?.(
+        `[EasyPruning][Gateway] cooldown baseline rebased session=${key} from=${state.lastTriggerTokenCount}t to=${inputTokens}t mode=${triggerMode}`,
+      );
+      state.lastTriggerTokenCount = inputTokens;
+      state.pruneCount = 0;
+    }
+
+    const tokensSinceLast = Math.max(0, inputTokens - state.lastTriggerTokenCount);
     if (state.pruneCount > 0 && tokensSinceLast < config.trigger_every_n_tokens) {
       logger.info?.(
-        `[EasyPruning][Gateway] skip session=${key} reason=cooldown real_input_tokens=${realInputTokens}t since_last_trigger=${tokensSinceLast}t required=${config.trigger_every_n_tokens}t`,
+        `[EasyPruning][Gateway] skip session=${key} reason=cooldown input_tokens=${inputTokens}t since_last_trigger=${tokensSinceLast}t required=${config.trigger_every_n_tokens}t mode=${triggerMode}`,
       );
       return;
     }
@@ -119,7 +144,8 @@ export function createBeforeAgentStartHandler(
 
     const changed = !sameArrayShallow(messages, result.messages);
 
-    state.lastTriggerTokenCount = realInputTokens;
+    state.lastTriggerTokenCount = inputTokens;
+    state.lastTriggerSource = triggerMode;
     state.lastTriggeredAt = Date.now();
     if (changed) {
       state.pruneCount += 1;
@@ -128,7 +154,7 @@ export function createBeforeAgentStartHandler(
 
     if (!changed) {
       logger.info?.(
-        `[EasyPruning][Gateway] prune-check session=${key} triggered=true changed=0 reason=no_eligible_messages real_input_tokens=${realInputTokens}t`,
+        `[EasyPruning][Gateway] prune-check session=${key} triggered=true changed=0 reason=no_eligible_messages input_tokens=${inputTokens}t mode=${triggerMode}`,
       );
       return;
     }
@@ -142,7 +168,7 @@ export function createBeforeAgentStartHandler(
         : "0.0";
 
     logger.info?.(
-      `[EasyPruning][Gateway] prune#${state.pruneCount} session=${key} triggered=true real_input_tokens=${realInputTokens}t before=${result.stats.contextTokensBefore}t after=${result.stats.contextTokensAfter}t deleted=${result.stats.deletedTokens}t (${pct}%) changed=${result.stats.changedMessages}msg ` +
+      `[EasyPruning][Gateway] prune#${state.pruneCount} session=${key} triggered=true input_tokens=${inputTokens}t mode=${triggerMode} before=${result.stats.contextTokensBefore}t after=${result.stats.contextTokensAfter}t deleted=${result.stats.deletedTokens}t (${pct}%) changed=${result.stats.changedMessages}msg ` +
         `[soft:${result.stats.zoneChanged.soft}/-${result.stats.zoneDeletedTokens.soft}t hard:${result.stats.zoneChanged.hard}/-${result.stats.zoneDeletedTokens.hard}t detail:${result.stats.zoneChanged.detail}/-${result.stats.zoneDeletedTokens.detail}t]`,
     );
 

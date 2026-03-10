@@ -102,6 +102,11 @@ type SessionTriggerState = {
   lastTriggerTokenCount: number;
   lastTriggeredAt: number;
   pruneCount: number;
+  /**
+   * Tracks whether the cooldown baseline came from real usage tokens or estimation.
+   * Used to safely rebase when providers start/stop reporting usage fields.
+   */
+  lastTriggerSource?: "real" | "estimate";
 };
 
 type MessageMeta = {

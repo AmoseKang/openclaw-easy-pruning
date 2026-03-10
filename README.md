@@ -10,6 +10,10 @@ Rule-based, model-agnostic **session context pruning** for OpenClaw.
 
 Easy Pruning trims oversized context **in memory only** before an agent run. It never rewrites your on-disk `*.jsonl` history.
 
+![Easy Pruning flowchart](./assets/easy-pruning-flowchart.png)
+
+> **Compatibility note:** OpenClaw’s built-in pruning is commonly *Claude-first* (and in many setups effectively Claude-only). Easy Pruning is designed to work across **all models/providers** by using real `llm_output` usage tokens when available, and falling back to a deterministic token estimate when they are not.
+
 ---
 
 ## Why this project exists
@@ -52,10 +56,11 @@ Trigger knobs are now minimal and explicit:
 
 Before each agent run:
 
-1. Read `real_input_tokens` cached from `llm_output`
-2. If `< pruning_threshold` → skip
-3. If growth since last trigger `< trigger_every_n_tokens` → skip
-4. Otherwise run the pruning pipeline
+1. Prefer real `input_tokens` cached from `llm_output` (usage)
+2. If usage is missing, fall back to an **estimated** token count from the current message list
+3. If `< pruning_threshold` → skip
+4. If growth since last trigger `< trigger_every_n_tokens` → skip
+5. Otherwise run the pruning pipeline
 
 ### Three-stage pruning pipeline
 
