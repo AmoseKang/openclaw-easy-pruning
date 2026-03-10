@@ -50,7 +50,7 @@
       .accentStroke { stroke: url(#accent); stroke-width: 3; }
       .line { stroke: rgba(154, 166, 195, 0.75); stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
 
-      .small { font-size: 16px; fill: rgba(226,232,240,0.87); }
+      .small { font-size: 15px; fill: rgba(226,232,240,0.87); }
       .text { font-size: 18px; fill: rgba(226,232,240,0.92); }
       .dim { fill: rgba(148,163,184,0.78); }
       .tag { font-size: 15px; fill: rgba(226,232,240,0.9); }
@@ -88,26 +88,26 @@
   <text x="435" y="259" class="t tag">llm_output</text>
 
   <!-- Hook boxes -->
-  <rect x="105" y="295" rx="18" ry="18" width="610" height="112" class="box"/>
+  <rect x="105" y="295" rx="18" ry="18" width="610" height="116" class="box"/>
   <text x="130" y="330" class="h text">llm_input</text>
   <text x="130" y="358" class="t small dim">Cache latest model id per session</text>
-  <text x="130" y="385" class="t small"><tspan class="mono k">sessionModelCache</tspan> ← event.model</text>
+  <text x="130" y="386" class="t small"><tspan class="mono k">sessionModelCache</tspan> ← event.model</text>
 
-  <rect x="105" y="420" rx="18" ry="18" width="610" height="142" class="box"/>
-  <text x="130" y="455" class="h text">llm_output</text>
-  <text x="130" y="483" class="t small dim">Prefer real usage tokens when available</text>
-  <text x="130" y="510" class="t small"><tspan class="mono k">sessionRealInputTokensCache</tspan> ← usage.input_tokens (or compatible)</text>
-  <text x="130" y="537" class="t small dim">If missing, fallback to deterministic estimate from messages</text>
+  <rect x="105" y="424" rx="18" ry="18" width="610" height="152" class="box"/>
+  <text x="130" y="459" class="h text">llm_output</text>
+  <text x="130" y="487" class="t small dim">Prefer real usage tokens when available</text>
+  <text x="130" y="514" class="t small"><tspan class="mono k">sessionRealInputTokensCache</tspan> ← usage.input_tokens</text>
+  <text x="130" y="540" class="t small dim">If missing: fallback to deterministic estimate from messages</text>
 
   <!-- Decision / gating -->
-  <rect x="105" y="582" rx="18" ry="18" width="610" height="222" class="boxStrong"/>
-  <text x="130" y="617" class="h text">before_agent_start (gate + cooldown)</text>
+  <rect x="105" y="590" rx="18" ry="18" width="610" height="214" class="boxStrong"/>
+  <text x="130" y="625" class="h text">before_agent_start (gate + cooldown)</text>
 
-  <text x="130" y="650" class="t small">1) tokens = <tspan class="mono">usage.input_tokens</tspan> else <tspan class="mono">estimateContextTokens</tspan></text>
-  <text x="130" y="678" class="t small">2) If tokens &lt; <tspan class="mono">pruning_threshold</tspan> → <tspan class="y">skip</tspan></text>
-  <text x="130" y="706" class="t small">3) If growth &lt; <tspan class="mono">trigger_every_n_tokens</tspan> → <tspan class="y">skip</tspan></text>
+  <text x="130" y="656" class="t small">1) tokens = <tspan class="mono">usage.input_tokens</tspan>  else  <tspan class="mono">estimateContextTokens</tspan></text>
+  <text x="130" y="682" class="t small">2) If tokens &lt; <tspan class="mono">pruning_threshold</tspan> → <tspan class="y">skip</tspan></text>
+  <text x="130" y="708" class="t small">3) If growth &lt; <tspan class="mono">trigger_every_n_tokens</tspan> → <tspan class="y">skip</tspan></text>
   <text x="130" y="734" class="t small">4) Else → run pipeline (soft → hard → detail)</text>
-  <text x="130" y="762" class="t small dim">Logs: mode=real/estimate, skip reasons, prune stats</text>
+  <text x="130" y="760" class="t small dim">Logs include: mode=real/estimate, skip reason, prune stats</text>
 
   <!-- Connector to right panel -->
   <path d="M 750 700 C 865 700, 885 700, 900 700" class="line"/>
@@ -115,10 +115,6 @@
   <!-- Right panel -->
   <rect x="850" y="165" rx="22" ry="22" width="680" height="670" class="panel"/>
   <text x="885" y="215" class="h" font-size="24" fill="rgba(226,232,240,0.95)">B. Pruning pipeline</text>
-
-  <!-- Layout: left column boxes + right column callouts (no overlap) -->
-  <!-- left column width: 430, right column width: 150 -->
-  <!-- Column guide: left=885..1315, right=1330..1495 -->
 
   <!-- Callouts (right column) -->
   <rect x="1330" y="255" rx="16" ry="16" width="165" height="104" fill="rgba(124,58,237,0.10)" stroke="rgba(124,58,237,0.55)" stroke-width="1.1"/>
@@ -134,37 +130,38 @@
   <text x="1348" y="477" class="t" font-size="14" fill="rgba(148,163,184,0.92)">Keep recent</text>
 
   <!-- Pipeline boxes (left column) -->
-  <rect x="885" y="255" rx="18" ry="18" width="430" height="112" class="box"/>
+  <rect x="885" y="255" rx="18" ry="18" width="430" height="124" class="box"/>
   <text x="910" y="290" class="h text">Build message metas</text>
   <text x="910" y="318" class="t small dim">Estimate token ranges; resolve zones by thresholds</text>
-  <text x="910" y="346" class="t small">Retention: <tspan class="p">system</tspan>/<tspan class="g">user</tspan> + keep_recent_tokens/messages</text>
+  <text x="910" y="344" class="t small">Retention: <tspan class="p">system</tspan>/<tspan class="g">user</tspan> preserved</text>
+  <text x="910" y="370" class="t small dim">Plus keep_recent_tokens / keep_recent_messages</text>
 
-  <path d="M 1100 367 L 1100 395" class="line"/>
+  <path d="M 1100 379 L 1100 405" class="line"/>
 
-  <rect x="885" y="405" rx="18" ry="18" width="430" height="112" class="box"/>
-  <text x="910" y="440" class="h text">Soft</text>
-  <text x="910" y="468" class="t small dim">Trim oversized tool outputs (head/tail)</text>
-  <text x="910" y="496" class="t small">Minimize semantic loss; quick token wins</text>
+  <rect x="885" y="415" rx="18" ry="18" width="430" height="112" class="box"/>
+  <text x="910" y="450" class="h text">Soft</text>
+  <text x="910" y="478" class="t small dim">Trim oversized tool outputs (head/tail)</text>
+  <text x="910" y="504" class="t small">Quick wins with minimal semantic loss</text>
 
-  <path d="M 1100 517 L 1100 545" class="line"/>
+  <path d="M 1100 527 L 1100 555" class="line"/>
 
-  <rect x="885" y="555" rx="18" ry="18" width="430" height="112" class="box"/>
-  <text x="910" y="590" class="h text">Hard</text>
-  <text x="910" y="618" class="t small dim">Clear old tool results → placeholder</text>
-  <text x="910" y="646" class="t small">Reclaim stale execution logs aggressively</text>
+  <rect x="885" y="565" rx="18" ry="18" width="430" height="112" class="box"/>
+  <text x="910" y="600" class="h text">Hard</text>
+  <text x="910" y="628" class="t small dim">Clear old tool results → placeholder</text>
+  <text x="910" y="654" class="t small">Reclaim stale execution logs aggressively</text>
 
-  <path d="M 1100 667 L 1100 695" class="line"/>
+  <path d="M 1100 677 L 1100 705" class="line"/>
 
-  <rect x="885" y="705" rx="18" ry="18" width="610" height="130" class="boxStrong"/>
-  <text x="910" y="740" class="h text">Detail</text>
-  <text x="910" y="768" class="t small dim">Compact process-heavy internals; keep outcomes</text>
-  <text x="910" y="796" class="t small">Modes: <tspan class="mono">default</tspan> · <tspan class="mono">keep_last_reply</tspan> · <tspan class="mono">model_summary</tspan></text>
-  <text x="910" y="823" class="t small dim">Tool-call safety: preserve toolCall skeleton (call_id)</text>
+  <rect x="885" y="715" rx="18" ry="18" width="610" height="120" class="boxStrong"/>
+  <text x="910" y="750" class="h text">Detail</text>
+  <text x="910" y="778" class="t small dim">Compact process internals; keep outcomes</text>
+  <text x="910" y="804" class="t small">Modes: <tspan class="mono">default</tspan> · <tspan class="mono">keep_last_reply</tspan> · <tspan class="mono">model_summary</tspan></text>
+  <text x="910" y="830" class="t small dim">Tool-call safety: preserve toolCall skeleton (call_id)</text>
 
   <!-- Footer legend -->
   <rect x="70" y="840" rx="16" ry="16" width="1460" height="45" fill="rgba(2,6,23,0.32)" stroke="rgba(148,163,184,0.22)"/>
   <text x="95" y="868" class="t" font-size="18" fill="rgba(148,163,184,0.92)">
-    Output: pruned in-memory then forwarded to the agent run. Works across models (real usage tokens when available; estimate fallback otherwise).
+    Output: pruned in-memory then forwarded to the agent run. Works across models (usage tokens when available; estimate fallback otherwise).
   </text>
 
   <!-- Decorative accent line -->
