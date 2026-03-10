@@ -8,7 +8,6 @@
 
 Rule-based, model-agnostic **session context pruning** for OpenClaw.
 
-Easy Pruning trims oversized context **in memory only** before an agent run. It never rewrites your on-disk `*.jsonl` history.
 
 ![Easy Pruning flowchart](./assets/easy-pruning-flowchart.png)
 
